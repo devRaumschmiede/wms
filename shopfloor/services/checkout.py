@@ -95,6 +95,7 @@ class Checkout(Component):
         return self._response(next_state="manual_selection", data=data, message=message)
 
     def _data_response_for_select_package(self, picking, lines):
+        with_pack, wo_pack = self._get_allow_package_options()
         return {
             "selected_move_lines": self._data_for_move_lines(lines.sorted()),
             "picking": self.data.picking(picking),
@@ -102,6 +103,8 @@ class Checkout(Component):
             "no_package_enabled": not self.options.get("checkout__disable_no_package"),
             # Used by inheriting module
             "package_allowed": True,
+            "allow_with_package": with_pack,
+            "allow_without_package": wo_pack,
         }
 
     def _response_for_select_package(self, picking, lines, message=None):
@@ -110,6 +113,15 @@ class Checkout(Component):
             data=self._data_response_for_select_package(picking, lines),
             message=message,
         )
+
+    def _get_allow_package_options(self):
+        if not self.work.menu.package_process_type:
+            return True, True
+
+        if self.work.menu.package_process_type == "with_package":
+            return True, False
+
+        return False, True
 
     def _data_for_packing_info(self, picking):
         """Return the packing information
@@ -975,6 +987,26 @@ class Checkout(Component):
         )
         return result_handler(picking, selected_lines, search_result.record)
 
+    def _check_scan_package_find(self, picking, search_result):
+        # Used by inheriting modules
+        # return False
+        # TODO: move implementation to a local module
+        ppt = self.work.menu.package_process_type
+        # Currently there is no known way to finish the checkout with a scan. To
+        # process without any package is only possible with a button. In its def
+        # a BadRequest is raised in case no package is not allowed
+        if not ppt or ppt == "with_package":
+            return
+
+        stype = search_result.type
+
+        if ppt == "without_package" and stype in [
+            "package",
+            "packaging",
+            "delivery_packaging",
+        ]:
+            return self.msg_store.invalid_scanned_checkout_object_wo_package(stype, ppt)
+
     def _scan_package_find(self, picking, barcode, search_types=None):
         search = self._actions_for("search")
         search_types = (
@@ -994,9 +1026,6 @@ class Checkout(Component):
             ),
         )
 
-    def _check_scan_package_find(self, picking, search_result):
-        # Used by inheriting modules
-        return False
 
     def _find_line_to_increment(self, product_lines):
         """Find which line should have its qty incremented.
@@ -1160,7 +1189,7 @@ class Checkout(Component):
         Transitions:
         * select_line: goes back to selection of lines to work on next lines
         """
-        if self.options.get("checkout__disable_no_package"):
+        if self.work.menu.package_process_type == "with_package":
             raise BadRequest("`checkout.no_package` endpoint is not enabled")
         picking = self.env["stock.picking"].browse(picking_id)
         message = self._check_picking_status(picking)
@@ -1688,7 +1717,12 @@ class ShopfloorCheckoutValidatorResponse(Component):
             "select_package": dict(
                 self._schema_selected_lines,
                 packing_info={"type": "string", "nullable": True},
-                no_package_enabled={
+                allow_with_package={
+                    "type": "boolean",
+                    "nullable": True,
+                    "required": False,
+                },
+                allow_without_package={
                     "type": "boolean",
                     "nullable": True,
                     "required": False,

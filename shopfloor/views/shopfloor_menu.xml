@@ -169,6 +169,13 @@
                     />
                     <field name="allow_alternative_destination_package" />
                 </group>
+                <group
+                    name="package_process_type"
+                    attrs="{'invisible': [('package_process_type_is_possible', '=', False)]}"
+                >
+                  <field name="package_process_type_is_possible" invisible="1" />
+                  <field name="package_process_type" />
+              </group>
             </group>
         </field>
     </record>

@@ -227,6 +227,17 @@ class ShopfloorMenu(models.Model):
         compute="_compute_allow_alternative_destination_package_is_possible"
     )
 
+    package_process_type_is_possible = fields.Boolean(
+        compute="_compute_package_process_type_is_possible"
+    )
+    package_process_type = fields.Selection(
+        [
+            ("without_package", "Without Package"),
+            ("with_package", "With Package"),
+        ],
+        "Package Proccess Type",
+    )
+
     @api.onchange("unload_package_at_destination")
     def _onchange_unload_package_at_destination(self):
         # Uncheck pick_pack_same_time when unload_package_at_destination is set to True
@@ -454,4 +465,11 @@ class ShopfloorMenu(models.Model):
         for menu in self:
             menu.allow_alternative_destination_package_is_possible = (
                 menu.scenario_id.has_option("allow_alternative_destination_package")
+            )
+
+    @api.depends("scenario_id")
+    def _compute_package_process_type_is_possible(self):
+        for menu in self:
+            menu.package_process_type_is_possible = menu.scenario_id.has_option(
+                "package_process_type"
             )

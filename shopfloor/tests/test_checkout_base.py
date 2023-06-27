@@ -70,6 +70,8 @@ class CheckoutCommonCase(CommonCase):
                 "packing_info": "",
                 "no_package_enabled": True,
                 "package_allowed": True,
+                "allow_with_package": True,
+                "allow_without_package": True,
             },
             message={
                 "message_type": "warning",

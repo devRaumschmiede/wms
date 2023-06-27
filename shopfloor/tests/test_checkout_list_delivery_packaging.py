@@ -116,6 +116,8 @@ class CheckoutListDeliveryPackagingCase(CheckoutCommonCase, CheckoutSelectPackag
                     "checkout__disable_no_package"
                 ),
                 "package_allowed": True,
+                "allow_with_package": True,
+                "allow_without_package": True,
             },
             message=self.service.msg_store.no_delivery_packaging_available(),
         )
