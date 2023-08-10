@@ -270,7 +270,12 @@ class Reception(Component):
                     line = move_line
                     break
         if not line:
-            values = move._prepare_move_line_vals()
+            qty_todo_remaining = max(
+                0,
+                move.product_uom_qty
+                - sum(move.move_line_ids.mapped("product_uom_qty")),
+            )
+            values = move._prepare_move_line_vals(quantity=qty_todo_remaining)
             line = self.env["stock.move.line"].create(values)
         return self._scan_line__assign_user(picking, line, qty_done)
 

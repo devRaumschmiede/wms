@@ -838,3 +838,16 @@ class TestSetQuantity(CommonCase):
             "scan_line",
             params={"picking_id": picking.id, "barcode": self.product_a.barcode},
         )
+
+        # After move_line is posted, its state is done, and its qty_done is 1.0
+        self.assertEqual(move_line_user_1.state, "done")
+
+        # The remaining one is still assigned
+        self.assertEqual(move_line_user_2.state, "assigned")
+        # As well as the new one
+        self.assertEqual(len(lines_after), 1)
+
+        # And the total remaining qty to be done is 9.0 (10.0 - 1.0)
+        self.assertEqual(
+            lines_after.product_uom_qty + move_line_user_2.product_uom_qty, 9.0
+        )
