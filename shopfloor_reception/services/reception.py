@@ -1287,7 +1287,12 @@ class Reception(Component):
         lines_with_qty_todo = selected_line.move_id.move_line_ids.filtered(
             lambda line: line.state not in ("cancel", "done")
             and line.product_uom_qty > 0
-        )
+        #     --
+        # new_move_line = selected_line._split_partial_quantity()
+        # new_move = selected_line.move_id.split_other_move_lines(
+        #     selected_line, intersection=True
+        # )
+        # --
         move = selected_line.move_id
         lock = self._actions_for("lock")
         lock.for_update(move)
