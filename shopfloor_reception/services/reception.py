@@ -861,6 +861,7 @@ class Reception(Component):
             "product": (
                 self._scan_document__by_product
                 if not self.work.menu.scan_location_or_pack_first
+                and self.work.menu.allow_select_document_by_product
                 else None
             ),
             "packaging": self._scan_document__by_packaging,
