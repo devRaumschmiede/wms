@@ -1499,6 +1499,16 @@ class ShopfloorReceptionValidator(Component):
             },
         }
 
+    def set_quantity__cancel_action(self):
+        return {
+            "picking_id": {"coerce": to_int, "required": True, "type": "integer"},
+            "selected_line_id": {
+                "coerce": to_int,
+                "type": "integer",
+                "required": True,
+            },
+        }
+
     def process_with_existing_pack(self):
         return {
             "picking_id": {"coerce": to_int, "required": True, "type": "integer"},
