@@ -1,6 +1,8 @@
 # Copyright 2020 Camptocamp SA (http://www.camptocamp.com)
+# Copyright 2025 Michael Tietz (MT Software) <mtietz@mt-software.de>
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 from odoo import _, fields
+from odoo.exceptions import UserError
 from odoo.tools.float_utils import float_round
 
 from odoo.addons.component.core import Component
@@ -177,16 +179,25 @@ class StockAction(Component):
             the transfer is validated as usual, creating a backorder.
         """
         moves.split_unavailable_qty()
+        existing_backorder_ids = []
+        pickings_to_validate_ids = []
         for picking in moves.picking_id:
             moves_todo = picking.move_lines & moves
             if self._check_backorder(picking, moves_todo):
-                existing_backorders = picking.backorder_ids
-                picking._action_done()
-                new_backorders = picking.backorder_ids - existing_backorders
-                if new_backorders:
-                    new_backorders.write({"user_id": False})
-            else:
-                moves_todo.extract_and_action_done()
+                existing_backorder_ids += picking.backorder_ids.ids
+                pickings_to_validate_ids.append(picking.id)
+                continue
+            new_picking = moves_todo._extract_in_split_order()
+            if new_picking.state != "assigned":
+                raise UserError(_("Internal Error. Split order is not available"))
+            pickings_to_validate_ids.append(new_picking.id)
+        if pickings_to_validate_ids:
+            pickings_to_validate = moves.picking_id.browse(pickings_to_validate_ids)
+            pickings_to_validate._action_done()
+            existing_backorders = moves.picking_id.browse(existing_backorder_ids)
+            new_backorders = pickings_to_validate.backorder_ids - existing_backorders
+            if new_backorders:
+                new_backorders.write({"user_id": False})
 
     def _check_backorder(self, picking, moves):
         """Check if the `picking` has to be validated as usual to create a backorder.
@@ -198,6 +209,10 @@ class StockAction(Component):
             - the moves are not linked to unprocessed ancestor moves
         """
         assigned_moves = picking.move_lines.filtered(lambda m: m.state == "assigned")
+        moves_todo = picking.move_lines - assigned_moves
+        moves_todo = moves_todo.filtered(lambda m: m.state not in ["done", "cancel"])
+        if not moves_todo and assigned_moves == moves:
+            return True
         has_ancestors = bool(
             moves.move_orig_ids.filtered(lambda m: m.state not in ("cancel", "done"))
         )
@@ -228,3 +243,26 @@ class StockAction(Component):
         # when no putaway is found, the move line destination stays the
         # default's of the picking type
         return any(line.location_dest_id in base_locations for line in move_lines)
+
+    def _lock_lines(self, lines):
+        self._actions_for("lock").for_update(lines)
+
+    def _set_destination_on_lines(self, lines, location_dest):
+        # when writing the destination on the package level, it writes
+        # on the moves and move lines
+        lines_with_package_level = lines.package_level_id.move_line_ids
+        lines_without_package_level = lines - lines_with_package_level
+        if lines_with_package_level:
+            lines_with_package_level.package_level_id.location_dest_id = location_dest
+        if lines_without_package_level:
+            lines_without_package_level.location_dest_id = location_dest
+            lines_without_package_level.move_id.location_dest_id = location_dest
+
+    def _unload_package(self, lines):
+        lines.result_package_id = False
+
+    def set_destination_and_unload_lines(self, lines, location_dest, unload=False):
+        self._lock_lines(lines)
+        self._set_destination_on_lines(lines, location_dest)
+        if unload:
+            self._unload_package(lines)

@@ -71,7 +71,12 @@ class DeliveryShipment(Component):
                 if not confirmation:
                     return self._response_for_scan_dock(
                         message=self.msg_store.scan_dock_again_to_confirm(dock),
-                        confirmation_required=True,
+                        confirmation_required=dock.barcode,
+                    )
+                if confirmation != dock.barcode:
+                    return self._response_for_scan_dock(
+                        message=self.msg_store.scan_dock_again_to_confirm(dock),
+                        confirmation_required=dock.barcode,
                     )
                 shipment_advice = self._create_shipment_advice_from_dock(dock)
             return self._response_for_scan_document(shipment_advice)
@@ -112,7 +117,7 @@ class DeliveryShipment(Component):
                 return self._response_for_scan_document(
                     shipment_advice, message=self.msg_store.stock_picking_not_found()
                 )
-            message = self._check_picking_status(picking, shipment_advice)
+            message = self._check_picking_processible(picking, shipment_advice)
             if message:
                 return self._response_for_scan_document(
                     shipment_advice, message=message
@@ -176,7 +181,7 @@ class DeliveryShipment(Component):
         If the shipment advice had planned content and that the scanned delivery
         is not part of it, returns an error message.
         """
-        message = self._check_picking_status(picking, shipment_advice)
+        message = self._check_picking_processible(picking, shipment_advice)
         if message:
             return self._response_for_scan_document(shipment_advice, message=message)
         else:
@@ -201,9 +206,12 @@ class DeliveryShipment(Component):
         move_lines = self._find_move_lines_from_package(
             shipment_advice, package, picking, location
         )
+        # import pdb; pdb.set_trace()
         if move_lines:
             # Check transfer status
-            message = self._check_picking_status(move_lines.picking_id, shipment_advice)
+            message = self._check_picking_processible(
+                move_lines.picking_id, shipment_advice
+            )
             if message:
                 return self._response_for_scan_document(
                     shipment_advice,
@@ -257,7 +265,9 @@ class DeliveryShipment(Component):
         )
         if move_lines:
             # Check transfer status
-            message = self._check_picking_status(move_lines.picking_id, shipment_advice)
+            message = self._check_picking_processible(
+                move_lines.picking_id, shipment_advice
+            )
             if message:
                 return self._response_for_scan_document(
                     shipment_advice, location=location, message=message
@@ -322,7 +332,9 @@ class DeliveryShipment(Component):
         )
         if move_lines:
             # Check transfer status
-            message = self._check_picking_status(move_lines.picking_id, shipment_advice)
+            message = self._check_picking_processible(
+                move_lines.picking_id, shipment_advice
+            )
             if message:
                 return self._response_for_scan_document(
                     shipment_advice, message=message
@@ -478,7 +490,7 @@ class DeliveryShipment(Component):
             message=self.msg_store.shipment_validated(shipment_advice)
         )
 
-    def _response_for_scan_dock(self, message=None, confirmation_required=False):
+    def _response_for_scan_dock(self, message=None, confirmation_required=None):
         """Transition to the 'scan_dock' state.
 
         The client screen invite the user to scan a dock to find or create an
@@ -740,17 +752,28 @@ class DeliveryShipment(Component):
 
     def _find_move_lines_domain(self, shipment_advice):
         """Returns the base domain to look for move lines for a given shipment."""
-        return shipment_advice.with_context(
-            shipment_picking_type_ids=self.picking_types.ids
-        )._find_move_lines_domain()  # Defined in `shipment_advice`
+        return shipment_advice._find_move_lines_domain(
+            self.picking_types
+        )  # Defined in `shipment_advice`
 
     def _find_move_lines_from_package(
         self, shipment_advice, package, picking, location
     ):
         """Returns the move line corresponding to `package` for the given shipment."""
-        domain = self._find_move_lines_domain(shipment_advice)
         # FIXME should we check also result package here?
-        domain.append(("package_id", "=", package.id))
+        domain = [
+            ("state", "in", ("assigned", "partially_available")),
+            ("package_id", "=", package.id),
+            "|",
+            ("shipment_advice_id", "=", False),
+            ("shipment_advice_id", "=", shipment_advice.id),
+        ]
+        if shipment_advice.planned_move_ids:
+            domain.append(("move_id.shipment_advice_id", "=", shipment_advice.id))
+        else:
+            domain.append(
+                ("move_id.shipment_advice_id", "=", False),
+            )
         if location:
             domain.append(
                 ("location_id", "child_of", location.id),
@@ -836,9 +859,21 @@ class DeliveryShipment(Component):
             )
         return pickings_not_loaded
 
-    def _check_picking_status(self, pickings, shipment_advice):
+    def _check_picking_type_unique(self, pickings, shipment_advice):
+        if len(pickings.picking_type_id) != 1:
+            # Check that pickings have the same picking type.
+            # This might happen if a sale order line is canceled while
+            # transfers are being processed.
+            # Package is ready to ship, but some products in it have to go back in
+            # stock.
+            return self.msg_store.package_partially_reserved_in_picking(pickings)
+
+    def _check_picking_processible(self, pickings, shipment_advice):
+        message = self._check_picking_type_unique(pickings, shipment_advice)
+        if message:
+            return message
+        message = super()._check_picking_processible(pickings)
         # Overloaded to add checks against a shipment advice
-        message = super()._check_picking_status(pickings)
         if message:
             return message
         for picking in pickings:
@@ -867,10 +902,9 @@ class ShopfloorDeliveryShipmentValidator(Component):
         return {
             "barcode": {"required": True, "type": "string"},
             "confirmation": {
-                "coerce": to_bool,
                 "required": False,
                 "nullable": True,
-                "type": "boolean",
+                "type": "string",
             },
         }
 
@@ -983,7 +1017,7 @@ class ShopfloorDeliveryShipmentValidatorResponse(Component):
     def _schema_scan_dock(self):
         return {
             "confirmation_required": {
-                "type": "boolean",
+                "type": "string",
                 "nullable": True,
                 "required": False,
             },

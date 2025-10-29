@@ -2,9 +2,10 @@
 # License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl.html).
 
 from odoo import fields
-from odoo.tests import common
+from odoo.tests import common, tagged
 
 
+@tagged("post_install", "-at_install")
 class PromiseReleaseCommonCase(common.SavepointCase):
     @classmethod
     def setUpClass(cls):
@@ -127,8 +128,18 @@ class PromiseReleaseCommonCase(common.SavepointCase):
         return pickings.filtered(lambda r: r.picking_type_code == "outgoing")
 
     @classmethod
-    def _deliver(cls, picking):
+    def _get_backorder_for_pickings(cls, pickings):
+        return cls.env["stock.picking"].search([("backorder_id", "in", pickings.ids)])
+
+    @classmethod
+    def _deliver(cls, picking, product_qty=None):
         picking.action_assign()
-        for line in picking.mapped("move_lines.move_line_ids"):
-            line.qty_done = line.product_uom_qty
+        if product_qty:
+            lines = picking.move_lines.move_line_ids
+            for product, qty in product_qty:
+                line = lines.filtered(lambda m: m.product_id == product)
+                line.qty_done = qty
+        else:
+            for line in picking.mapped("move_lines.move_line_ids"):
+                line.qty_done = line.product_uom_qty
         picking._action_done()

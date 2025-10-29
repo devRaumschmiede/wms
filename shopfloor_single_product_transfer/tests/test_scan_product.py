@@ -114,7 +114,7 @@ class TestScanProduct(CommonCase):
         self.assertTrue(move_line.picking_id.user_id)
         data = {
             "move_line": self._data_for_move_line(move_line),
-            "asking_confirmation": False,
+            "asking_confirmation": None,
         }
         self.assert_response(response, next_state="set_quantity", data=data)
 
@@ -161,9 +161,28 @@ class TestScanProduct(CommonCase):
         self.assertEqual(move_line.product_qty, 10.0)
         data = {
             "move_line": self._data_for_move_line(move_line),
-            "asking_confirmation": False,
+            "asking_confirmation": None,
         }
         self.assert_response(response, next_state="set_quantity", data=data)
+
+    def test_scan_product_no_stock(self):
+        location = self.location_src
+        product = self.product_a
+        with self.assertLogs(LOGGER_NAME) as log_catcher:
+            response = self.service.dispatch(
+                "scan_product",
+                params={"location_id": location.id, "barcode": product.barcode},
+            )
+            self.assertIn(ROLLBACK_LOG, log_catcher.output)
+        self.assertFalse(self.get_new_move_line())
+        expected_message = {
+            "message_type": "error",
+            "body": "No operation found for this menu and profile.",
+        }
+        data = {"location": self._data_for_location(location)}
+        self.assert_response(
+            response, next_state="select_product", message=expected_message, data=data
+        )
 
     def test_scan_product_with_reserved_stock_unreserve_move_disabled(self):
         # No move with product in location, create move line is enabled but
@@ -174,7 +193,7 @@ class TestScanProduct(CommonCase):
         self._add_stock_to_product(product, location, 10)
         self._enable_create_move_line()
         # This picking has reserved the only available goods
-        self._create_picking(
+        other_picking = self._create_picking(
             lines=[(product, 10)], picking_type=self.other_picking_type
         )
         with self.assertLogs(LOGGER_NAME) as log_catcher:
@@ -186,7 +205,7 @@ class TestScanProduct(CommonCase):
         self.assertFalse(self.get_new_move_line())
         expected_message = {
             "message_type": "error",
-            "body": "No operation found for this menu and profile.",
+            "body": f"Reserved for {self.other_picking_type.name} {other_picking.name}",
         }
         data = {"location": self._data_for_location(location)}
         self.assert_response(
@@ -218,7 +237,7 @@ class TestScanProduct(CommonCase):
         self.assertEqual(move_line.product_qty, 10.0)
         data = {
             "move_line": self._data_for_move_line(move_line),
-            "asking_confirmation": False,
+            "asking_confirmation": None,
         }
         self.assert_response(response, next_state="set_quantity", data=data)
 
@@ -258,7 +277,7 @@ class TestScanProduct(CommonCase):
         self.assertTrue(move_line.picking_id.user_id)
         data = {
             "move_line": self._data_for_move_line(move_line),
-            "asking_confirmation": False,
+            "asking_confirmation": None,
         }
         self.assert_response(response, next_state="set_quantity", data=data)
 
@@ -301,7 +320,7 @@ class TestScanProduct(CommonCase):
         self.assertTrue(move_line.picking_id.user_id)
         data = {
             "move_line": self._data_for_move_line(move_line),
-            "asking_confirmation": False,
+            "asking_confirmation": None,
         }
         self.assert_response(response, next_state="set_quantity", data=data)
 
@@ -313,7 +332,7 @@ class TestScanProduct(CommonCase):
         lot = self._create_lot_for_product(product, "LOT_BARCODE")
         self._add_stock_to_product(product, location, 10, lot=lot)
         # This picking has reserved the only available goods
-        self._create_picking(
+        other_picking = self._create_picking(
             lines=[(product, 10)], picking_type=self.other_picking_type
         )
         with self.assertLogs(LOGGER_NAME) as log_catcher:
@@ -324,7 +343,7 @@ class TestScanProduct(CommonCase):
         self.assertFalse(self.get_new_move_line())
         expected_message = {
             "message_type": "error",
-            "body": "No operation found for this menu and profile.",
+            "body": f"Reserved for {self.other_picking_type.name} {other_picking.name}",
         }
         data = {"location": self._data_for_location(location)}
         self.assert_response(
@@ -355,7 +374,7 @@ class TestScanProduct(CommonCase):
         self.assertEqual(move_line.product_qty, 10.0)
         data = {
             "move_line": self._data_for_move_line(move_line),
-            "asking_confirmation": False,
+            "asking_confirmation": None,
         }
         self.assert_response(response, next_state="set_quantity", data=data)
 
@@ -400,7 +419,7 @@ class TestScanProduct(CommonCase):
         self.assertTrue(move_line)
         data = {
             "move_line": self._data_for_move_line(move_line),
-            "asking_confirmation": False,
+            "asking_confirmation": None,
         }
         self.assert_response(response, next_state="set_quantity", data=data)
 
@@ -425,7 +444,7 @@ class TestScanProduct(CommonCase):
         self.assertTrue(move_line)
         data = {
             "move_line": self._data_for_move_line(move_line),
-            "asking_confirmation": False,
+            "asking_confirmation": None,
         }
         self.assert_response(response, next_state="set_quantity", data=data)
 
@@ -508,6 +527,6 @@ class TestScanProduct(CommonCase):
         self.assertTrue(move_line.picking_id.user_id)
         data = {
             "move_line": self._data_for_move_line(move_line),
-            "asking_confirmation": False,
+            "asking_confirmation": None,
         }
         self.assert_response(response, next_state="set_quantity", data=data)

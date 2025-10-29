@@ -28,6 +28,11 @@ class BaseShopfloorService(AbstractComponent):
         # User private attributes to not mess up w/ public endpoints
         self._profile = getattr(self.work, "profile", self.env["shopfloor.profile"])
         self._menu = getattr(self.work, "menu", self.env["shopfloor.menu"])
+        app = self.env["shopfloor.app"]
+        if self.collection._name == app._name:
+            app = self.collection
+        self.work.app = app
+        self.work._propagate_kwargs.append("app")
 
     def _get_api_spec(self, **params):
         return ShopfloorRestServiceAPISpec(self, **params)
@@ -37,6 +42,10 @@ class BaseShopfloorService(AbstractComponent):
         return super().dispatch(method_name, *args, params=params)
 
     def _actions_for(self, usage, **kw):
+        propagate_kwargs = kw.get("propagate_kwargs", [])
+        if "menu" not in propagate_kwargs:
+            propagate_kwargs.append("menu")
+            kw["propagate_kwargs"] = propagate_kwargs
         return get_actions_for(self, usage, **kw)
 
     @property

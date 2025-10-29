@@ -1,5 +1,6 @@
 # Copyright 2020 Camptocamp SA (http://www.camptocamp.com)
 # Copyright 2021 ACSONE SA/NV (http://www.acsone.eu)
+# Copyright 2024 Michael Tietz (MT Software) <mtietz@mt-software.de>
 # @author Simone Orsi <simahawk@gmail.com>
 # License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl.html).
 

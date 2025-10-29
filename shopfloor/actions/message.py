@@ -194,6 +194,15 @@ class MessageAction(Component):
     def already_done(self):
         return {"message_type": "info", "body": _("Operation already processed.")}
 
+    def transfer_canceled(self):
+        return {
+            "message_type": "info",
+            "body": _(
+                "Transfer has been canceled. "
+                "This cannot be processed using this scenario"
+            ),
+        }
+
     def move_already_done(self):
         return {"message_type": "warning", "body": _("Move already processed.")}
 
@@ -437,6 +446,30 @@ class MessageAction(Component):
             "body": _("No transfer found for this product."),
         }
 
+    def transfer_not_found_for_barcode(self, barcode):
+        body = _("No transfer found for barcode {}").format(barcode)
+        return {
+            "message_type": "error",
+            "body": body,
+        }
+
+    def transfer_not_found_for_record(self, record):
+        model_mapping = {
+            "product.product": "product",
+            "stock.picking": "transfer",
+            "stock.quant.package": "package",
+            "product.packaging": "packaging",
+            "stock.location": "location",
+            "stock.production.lot": "lot",
+            "stock.move": "move",
+        }
+        model_name = model_mapping.get(record._name)
+        body = _("No transfer found for {} {}").format(model_name, record.name)
+        return {
+            "message_type": "error",
+            "body": body,
+        }
+
     def product_not_found_in_location_or_transfer(self, product, location, picking):
         return {
             "message_type": "error",
@@ -461,6 +494,12 @@ class MessageAction(Component):
         return {
             "message_type": "warning",
             "body": _("Packaging not found in the current transfer."),
+        }
+
+    def packaging_dimension_updated(self, packaging):
+        return {
+            "message_type": "success",
+            "body": _("Packaging {} dimension updated.").format(packaging.name),
         }
 
     def expiration_date_missing(self):
@@ -499,11 +538,9 @@ class MessageAction(Component):
             "body": _("Place it in {}?").format(location_name),
         }
 
-    def product_not_found_in_current_picking(self):
-        return {
-            "message_type": "error",
-            "body": _("Product is not in the current transfer."),
-        }
+    def product_not_found_in_current_picking(self, product):
+        body = _("Product {} is not in the current transfer.").format(product.name)
+        return {"message_type": "error", "body": body}
 
     def lot_mixed_package_scan_package(self):
         return {
@@ -688,6 +725,12 @@ class MessageAction(Component):
         return {
             "message_type": "info",
             "body": _("No lines to process."),
+        }
+
+    def no_lines_to_process_set_quantities(self):
+        return {
+            "message_type": "info",
+            "body": _("No lines to process, set quantities on some"),
         }
 
     def location_empty(self, location):
@@ -890,4 +933,38 @@ class MessageAction(Component):
                 "Transferring to a different package is not allowed, "
                 "please scan a location instead."
             ),
+        }
+
+    def invalid_scanned_checkout_object_wo_package(
+        self, scanned_object, package_process_type
+    ):
+        scanned_object_name = {
+            "package": _("a package"),
+            "packaging": _("a packaging"),
+            "delivery_packaging": _("a delivery packaging"),
+        }.get(scanned_object, _("N/A"))
+
+        selection = self.env["shopfloor.menu"]._fields["package_process_type"].selection
+        ppt_name = None
+        for el in selection:
+            if el[0] == package_process_type:
+                ppt_name = el[1]
+                break
+
+        return {
+            "message_type": "error",
+            "body": _(
+                "You scanned {scanned_object_name} which is not allowed"
+                " with the package process type '{ppt_name}'"
+            ).format(scanned_object_name=scanned_object_name, ppt_name=ppt_name),
+        }
+
+    def reserved_for_other_picking_type(self, picking):
+        body = _("Reserved for %(picking_type)s %(picking_name)s") % {
+            "picking_type": picking.picking_type_id.name,
+            "picking_name": picking.name,
+        }
+        return {
+            "message_type": "error",
+            "body": body,
         }

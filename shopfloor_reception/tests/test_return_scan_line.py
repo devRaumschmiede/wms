@@ -22,7 +22,7 @@ class TestScanLineReturn(CommonCaseReturn):
             data={"picking": self._data_for_picking_with_moves(return_picking)},
             message={
                 "message_type": "error",
-                "body": "Product is not in the current transfer.",
+                "body": f"Product {wrong_product.name} is not in the current transfer.",
             },
         )
 
@@ -43,7 +43,7 @@ class TestScanLineReturn(CommonCaseReturn):
             response,
             next_state="set_quantity",
             data={
-                "confirmation_required": False,
+                "confirmation_required": None,
                 "picking": data,
                 "selected_move_line": self.data.move_lines(selected_move_line),
             },
@@ -94,7 +94,7 @@ class TestScanLineReturn(CommonCaseReturn):
             response,
             next_state="set_quantity",
             data={
-                "confirmation_required": False,
+                "confirmation_required": None,
                 "picking": data,
                 "selected_move_line": self.data.move_lines(selected_move_line),
             },

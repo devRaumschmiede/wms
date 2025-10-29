@@ -128,6 +128,10 @@ class DataAction(Component):
             "name",
             "shopfloor_weight:weight",
             ("package_storage_type_id:storage_type", ["id", "name"]),
+            (
+                "quant_ids:total_quantity",
+                lambda rec, fname: sum(rec.quant_ids.mapped("quantity")),
+            ),
         ]
 
     @property
@@ -232,7 +236,18 @@ class DataAction(Component):
     def move(self, record, **kw):
         record = record.with_context(location=record.location_id.id)
         parser = self._move_parser
-        return self._jsonify(record, parser)
+        data = self._jsonify(record, parser)
+        if "auto_post_enabled" in kw:
+            # Return the quantities done for the related backorders.
+            related_moves = self.env["stock.move"].search(
+                [
+                    ("picking_id.backorder_id", "=", record.picking_id.id),
+                    ("product_id", "=", record.product_id.id),
+                ]
+            )
+            qty_done = sum(related_moves.mapped("quantity_done"))
+            data.update({"backorders_quantity_done": qty_done})
+        return data
 
     def moves(self, records, **kw):
         return [self.move(rec, **kw) for rec in records]
@@ -351,16 +366,11 @@ class DataAction(Component):
         lines = self.env["stock.move.line"].search(domain)
         # operations_to_do = number of total operations that are pending for this location.
         # operations_done = number of operations already done.
-        # A line with an assigned package counts as 1 operation.
         operations_to_do = 0
         operations_done = 0
         for line in lines:
-            is_done = line.qty_done == line.product_uom_qty
-            package_qty_done = 1 if is_done else 0
-            operations_done += (
-                line.qty_done if not line.package_id else package_qty_done
-            )
-            operations_to_do += line.product_uom_qty if not line.package_id else 1
+            operations_done += line.qty_done
+            operations_to_do += line.product_uom_qty - line.qty_done
         return {
             "done": operations_done,
             "to_do": operations_to_do,

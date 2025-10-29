@@ -43,7 +43,7 @@ export var SinglePackStatesMixin = {
                                 package_level_id: data.id,
                                 location_barcode: scanned.text,
                                 confirmation:
-                                    confirmation || data.confirmation_required,
+                                    confirmation || data.confirmation_required || "",
                             })
                         );
                     },

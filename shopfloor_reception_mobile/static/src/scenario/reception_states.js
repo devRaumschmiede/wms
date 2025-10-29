@@ -18,7 +18,9 @@ export const reception_states = function () {
         select_document: {
             display_info: {
                 title: "Choose an operation",
-                scan_placeholder: "Scan document / product / package",
+                scan_placeholder: () => {
+                    return "Scan document / product / package";
+                },
             },
             events: {
                 select: "on_select",
@@ -69,13 +71,16 @@ export const reception_states = function () {
                 cancel_picking_line: "on_cancel",
                 select: "on_select",
             },
+            get_odoo_call_data: () => {
+                const picking = this.state.data.picking;
+                return {
+                    picking_id: picking ? picking.id : null,
+                };
+            },
             on_scan: (barcode) => {
-                this.wait_call(
-                    this.odoo.call("scan_line", {
-                        picking_id: this.state.data.picking.id,
-                        barcode: barcode.text,
-                    })
-                );
+                const data = this.state.get_odoo_call_data();
+                data.barcode = barcode.text;
+                this.wait_call(this.odoo.call("scan_line", data));
             },
             on_mark_as_done: () => {
                 this.wait_call(
@@ -183,7 +188,7 @@ export const reception_states = function () {
                         selected_line_id: this.line_being_handled.id,
                         quantity: this.scan_destination_qty,
                         barcode: barcode.text,
-                        confirmation: this.state.data.confirmation_required,
+                        confirmation: this.state.data.confirmation_required || "",
                     })
                 );
             },
@@ -240,6 +245,7 @@ export const reception_states = function () {
                         picking_id: this.state.data.picking.id,
                         selected_line_id: this.line_being_handled.id,
                         location_name: location.text,
+                        // FIXME if it is always set to true, it is not really used ?
                         confirmation: true,
                     })
                 );

@@ -1,15 +1,19 @@
 # Copyright 2019 Camptocamp (https://www.camptocamp.com)
 # Copyright 2020 Jacques-Etienne Baudoux (BCIM) <je@bcim.be>
 # Copyright 2023 Michael Tietz (MT Software) <mtietz@mt-software.de>
+# Copyright 2025 Raumschmiede GmbH
 # License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl.html).
 import itertools
 import logging
 import operator as py_operator
+from collections import defaultdict
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.osv import expression
-from odoo.tools import date_utils, float_compare, float_round
+from odoo.tools import date_utils, float_compare, float_is_zero, float_round, groupby
+
+from odoo.addons.stock.models.stock_move import StockMove as StockMoveBase
 
 _logger = logging.getLogger(__name__)
 
@@ -55,7 +59,7 @@ class StockMove(models.Model):
     zip_code = fields.Char(related="partner_id.zip", store=True)
     city = fields.Char(related="partner_id.city", store=True)
 
-    @api.depends("rule_id", "rule_id.available_to_promise_defer_pull")
+    @api.depends("need_release", "rule_id", "rule_id.available_to_promise_defer_pull")
     def _compute_unrelease_allowed(self):
         for move in self:
             unrelease_allowed = move._is_unreleaseable()
@@ -63,8 +67,9 @@ class StockMove(models.Model):
                 iterator = move._get_chained_moves_iterator("move_orig_ids")
                 next(iterator)  # skip the current move
                 for origin_moves in iterator:
-                    unrelease_allowed = move._is_unrelease_allowed_on_origin_moves(
-                        origin_moves
+                    unrelease_allowed = (
+                        not origin_moves._in_progress_for_unrelease()
+                        and move._is_unrelease_allowed_on_origin_moves(origin_moves)
                     )
                     if not unrelease_allowed:
                         break
@@ -87,41 +92,92 @@ class StockMove(models.Model):
             and self.rule_id.available_to_promise_defer_pull
         )
 
+    def _in_progress_for_unrelease(self) -> StockMoveBase:
+        """
+        This method will return the moves not done or canceled that :
+
+        - have their picking printed
+        - have a quantity done != 0
+
+        """
+        moves = self.filtered(lambda m: m.state not in ("done", "cancel"))
+        if not moves:
+            return moves
+        moves_printed = moves.filtered("picking_id.printed")
+        if moves_printed:
+            return moves_printed
+        moves_done = moves.filtered("quantity_done")
+        if moves_done:
+            return moves_done
+        return moves.browse()
+
     def _is_unrelease_allowed_on_origin_moves(self, origin_moves):
         """We check that the origin moves are in a state that allows the unrelease
         of the current move. At this stage, a move can't be unreleased if
-          * a picking is already printed. (The work on the picking is planed and
-            we don't want to change it)
-          * the processing of the origin moves is partially started.
+        the processed origin moves is not consumed by the dest moves.
         """
         self.ensure_one()
-        pickings = origin_moves.mapped("picking_id")
-        if pickings.filtered("printed"):
-            # The picking is printed, we can't unrelease the move
-            # because the processing of the origin moves is started.
-            return False
-        origin_moves = origin_moves.filtered(
-            lambda m: m.state not in ("done", "cancel")
+        origin_done_moves = origin_moves.filtered(lambda m: m.state == "done")
+        if self.rule_id.allow_unrelease_return_done_move:
+            origin_done_moves = origin_done_moves.filtered(
+                lambda m: not m.picking_type_id.return_picking_type_id
+            )
+        origin_qty_done = sum(
+            m.product_uom._compute_quantity(
+                m.quantity_done,
+                m.product_id.uom_id,
+                rounding_method="HALF-UP",
+            )
+            for m in origin_done_moves
         )
-        origin_qty_todo = sum(origin_moves.mapped("product_qty"))
+        dest_done_moves = origin_done_moves.move_dest_ids
+        dest_qty_done = sum(
+            m.product_uom._compute_quantity(
+                m.quantity_done,
+                m.product_id.uom_id,
+                rounding_method="HALF-UP",
+            )
+            for m in dest_done_moves
+        )
         return (
             float_compare(
-                self.product_qty,
-                origin_qty_todo,
-                precision_rounding=self.product_uom.rounding,
+                origin_qty_done,
+                dest_qty_done,
+                precision_rounding=self.product_id.uom_id.rounding,
             )
             <= 0
         )
 
-    def _check_unrelease_allowed(self):
-        for move in self:
-            if not move.unrelease_allowed:
-                raise UserError(
-                    _(
-                        "You are not allowed to unrelease this move %(move_name)s.",
-                        move_name=move.display_name,
-                    )
+    def _unrelease_not_allowed_error(self):
+        message = _("You are not allowed to unrelease those deliveries:\n")
+
+        for picking, forbidden_moves_by_picking in groupby(
+            self, lambda m: m.picking_id
+        ):
+            forbidden_moves_by_picking = self.browse().concat(
+                *forbidden_moves_by_picking
+            )
+            message += "\n\t- %s" % picking.name
+            forbidden_origin_pickings = self.picking_id.browse()
+            for move in forbidden_moves_by_picking:
+                iterator = move._get_chained_moves_iterator("move_orig_ids")
+                next(iterator)  # skip the current move
+                for origin_moves in iterator:
+                    for origin_picking, moves_by_picking in groupby(
+                        origin_moves, lambda m: m.picking_id
+                    ):
+                        moves_by_picking = self.browse().concat(*moves_by_picking)
+                        if not move._is_unrelease_allowed_on_origin_moves(
+                            moves_by_picking
+                        ):
+                            forbidden_origin_pickings |= origin_picking
+            if forbidden_origin_pickings:
+                message += " "
+                message += _(
+                    "- blocking transfer(s): %(picking_names)s",
+                    picking_names=" ".join(forbidden_origin_pickings.mapped("name")),
                 )
+        raise UserError(message)
 
     def _previous_promised_qty_sql_main_query(self):
         return """
@@ -146,51 +202,60 @@ class StockMove(models.Model):
             GROUP BY move.id;
         """
 
+    def _previous_promised_qty_sql_moves_before_matches(self):
+        return "COALESCE(m.need_release, False) = COALESCE(move.need_release, False)"
+
     def _previous_promised_qty_sql_moves_before(self):
         sql = """
-            m.priority > move.priority
-            OR
-            (
-                m.priority = move.priority
-                AND m.date_priority < move.date_priority
+            {moves_matches}
+            AND (
+                m.priority > move.priority
+                OR
+                (
+                    m.priority = move.priority
+                    AND m.date_priority < move.date_priority
+                )
+                OR (
+                    m.priority = move.priority
+                    AND m.date_priority = move.date_priority
+                    AND m.picking_type_id = move.picking_type_id
+                    AND m.id < move.id
+                )
+                OR (
+                    m.priority = move.priority
+                    AND m.date_priority = move.date_priority
+                    AND m.picking_type_id != move.picking_type_id
+                    AND m.id > move.id
+                )
             )
-            OR (
-                m.priority = move.priority
-                AND m.date_priority = move.date_priority
-                AND m.picking_type_id = move.picking_type_id
-                AND m.id < move.id
-            )
-            OR (
-                m.priority = move.priority
-                AND m.date_priority = move.date_priority
-                AND m.picking_type_id != move.picking_type_id
-                AND m.id > move.id
-            )
-        """
+        """.format(
+            moves_matches=self._previous_promised_qty_sql_moves_before_matches()
+        )
         return sql
 
-    def _previous_promised_qty_sql_lateral_where(self):
-        locations = self._ordered_available_to_promise_locations()
+    def _previous_promised_qty_sql_moves_no_release(self):
+        return "m.need_release IS false OR m.need_release IS null"
+
+    def _previous_promised_qty_sql_lateral_where(self, warehouse):
+        locations = warehouse.view_location_id
         sql = """
                 m.id != move.id
                 AND m.product_id = move.product_id
                 AND p_type.code = 'outgoing'
                 AND loc.parent_path LIKE ANY(%(location_paths)s)
                 AND (
-                    COALESCE(m.need_release, False) = COALESCE(move.need_release, False)
-                    AND (
-                        {moves_before}
-                    )
+                    {moves_before}
                     OR (
                         move.need_release IS true
-                        AND (m.need_release IS false OR m.need_release IS null)
+                        AND ({moves_no_release})
                     )
                 )
                 AND m.state IN (
                     'waiting', 'confirmed', 'partially_available', 'assigned'
                 )
         """.format(
-            moves_before=self._previous_promised_qty_sql_moves_before()
+            moves_before=self._previous_promised_qty_sql_moves_before(),
+            moves_no_release=self._previous_promised_qty_sql_moves_no_release(),
         )
         params = {
             "location_paths": [
@@ -206,49 +271,94 @@ class StockMove(models.Model):
             params["horizon"] = horizon_date
         return sql, params
 
-    def _previous_promised_qty_sql(self):
+    def _previous_promised_qty_sql(self, warehouse):
         """Lookup query for product promised qty in the same warehouse.
 
         Moves to consider are either already released or still be to released
         but not done yet. Each of them should fit the reservation horizon.
         """
         params = {"move_ids": tuple(self.ids)}
-        lateral_where, lateral_params = self._previous_promised_qty_sql_lateral_where()
+        lateral_where, lateral_params = self._previous_promised_qty_sql_lateral_where(
+            warehouse
+        )
         params.update(lateral_params)
         query = self._previous_promised_qty_sql_main_query().format(
             lateral_where=lateral_where
         )
         return query, params
 
+    def _group_by_warehouse(self):
+        return groupby(self, lambda m: m.warehouse_id)
+
+    def _get_previous_promised_qties(self):
+        self.flush()
+        self.env["stock.move.line"].flush(["move_id", "product_qty"])
+        self.env["stock.location"].flush(["parent_path"])
+        previous_promised_qties = {}
+        for warehouse, moves in self._group_by_warehouse():
+            moves = self.browse().union(*moves)
+            if not warehouse:
+                for move in moves:
+                    previous_promised_qties[move.id] = 0
+                continue
+            query, params = moves._previous_promised_qty_sql(warehouse)
+            self.env.cr.execute(query, params)
+            rows = dict(self.env.cr.fetchall())
+            previous_promised_qties.update(rows)
+        return previous_promised_qties
+
     @api.depends()
     def _compute_previous_promised_qty(self):
         if not self.ids:
             return
-        self.flush()
-        self.env["stock.move.line"].flush(["move_id", "product_qty"])
-        self.env["stock.location"].flush(["parent_path"])
-        self.previous_promised_qty = 0
-        query, params = self._previous_promised_qty_sql()
-        self.env.cr.execute(query, params)
-        rows = dict(self.env.cr.fetchall())
+        previous_promised_qty_by_move = self._get_previous_promised_qties()
         for move in self:
-            move.previous_promised_qty = rows.get(move.id, 0)
+            previous_promised_qty = previous_promised_qty_by_move.get(move.id, 0)
+            move.previous_promised_qty = previous_promised_qty
+
+    def _is_release_needed(self):
+        self.ensure_one()
+        return self.need_release and self.state not in ["done", "cancel"]
+
+    def _is_release_ready(self):
+        """Checks if a move itself is ready for release
+        without considering the picking release_ready
+        """
+        self.ensure_one()
+        if not self._is_release_needed() or self.state == "draft":
+            return False
+        release_policy = self.picking_id.release_policy
+        rounding = self.product_id.uom_id.rounding
+        ordered_available_to_promise_qty = self.ordered_available_to_promise_qty
+        if release_policy == "one":
+            return (
+                float_compare(
+                    ordered_available_to_promise_qty,
+                    self.product_qty,
+                    precision_rounding=rounding,
+                )
+                == 0
+            )
+        return (
+            float_compare(
+                ordered_available_to_promise_qty, 0, precision_rounding=rounding
+            )
+            > 0
+        )
 
     @api.depends(
         "ordered_available_to_promise_qty",
-        "picking_id.move_type",
         "picking_id.move_lines",
+        "picking_id.release_policy",
         "need_release",
+        "state",
     )
     def _compute_release_ready(self):
         for move in self:
-            if not move.need_release:
-                move.release_ready = False
-                continue
-            if move.picking_id._get_shipping_policy() == "one":
-                move.release_ready = move.picking_id.release_ready
-            else:
-                move.release_ready = move.ordered_available_to_promise_uom_qty > 0
+            release_ready = move._is_release_ready()
+            if release_ready and move.picking_id.release_policy == "one":
+                release_ready = move.picking_id.release_ready
+            move.release_ready = release_ready
 
     def _search_release_ready(self, operator, value):
         if operator != "=":
@@ -257,37 +367,19 @@ class StockMove(models.Model):
         moves = moves.filtered(lambda m: m.release_ready)
         return [("id", "in", moves.ids)]
 
-    def _ordered_available_to_promise_locations(self):
-        return self.env["stock.warehouse"].search([]).mapped("view_location_id")
+    def _get_ordered_available_to_promise_by_warehouse(self, warehouse):
+        res = {}
+        if not warehouse:
+            for move in self:
+                res[move] = {
+                    "ordered_available_to_promise_uom_qty": 0,
+                    "ordered_available_to_promise_qty": 0,
+                }
+            return res
 
-    @api.depends()
-    def _compute_ordered_available_to_promise(self):
-        moves = self.filtered(
-            lambda move: move._should_compute_ordered_available_to_promise()
-        )
-        (self - moves).update(
-            {
-                "ordered_available_to_promise_qty": 0.0,
-                "ordered_available_to_promise_uom_qty": 0.0,
-            }
-        )
-
-        locations = moves._ordered_available_to_promise_locations()
-
-        # Compute On-Hand quantity (equivalent of qty_available) for all "view
-        # locations" of all the warehouses: we may release as soon as we have
-        # the quantity somewhere. Do not use "qty_available" to get a faster
-        # computation.
-        location_domain = []
-        for location in locations:
-            location_domain = expression.OR(
-                [
-                    location_domain,
-                    [("location_id.parent_path", "=like", location.parent_path + "%")],
-                ]
-            )
+        location_domain = warehouse.view_location_id._get_available_to_promise_domain()
         domain_quant = expression.AND(
-            [[("product_id", "in", moves.product_id.ids)], location_domain]
+            [[("product_id", "in", self.product_id.ids)], location_domain]
         )
         location_quants = self.env["stock.quant"].read_group(
             domain_quant, ["product_id", "quantity"], ["product_id"], orderby="id"
@@ -295,7 +387,7 @@ class StockMove(models.Model):
         quants_available = {
             item["product_id"][0]: item["quantity"] for item in location_quants
         }
-        for move in moves:
+        for move in self:
             product_uom = move.product_id.uom_id
             previous_promised_qty = move.previous_promised_qty
 
@@ -311,15 +403,41 @@ class StockMove(models.Model):
                 move.product_uom,
                 rounding_method="HALF-UP",
             )
+            res[move] = {
+                "ordered_available_to_promise_uom_qty": max(
+                    min(uom_promised, move.product_uom_qty), 0.0
+                ),
+                "ordered_available_to_promise_qty": max(
+                    min(real_promised, move.product_qty), 0.0
+                ),
+            }
+        return res
 
-            move.ordered_available_to_promise_uom_qty = max(
-                min(uom_promised, move.product_uom_qty),
-                0.0,
-            )
-            move.ordered_available_to_promise_qty = max(
-                min(real_promised, move.product_qty),
-                0.0,
-            )
+    def _get_ordered_available_to_promise(self):
+        res = {}
+        moves_by_warehouse = self._group_by_warehouse()
+        # Compute On-Hand quantity (equivalent of qty_available) for all "view
+        # locations" of all the warehouses: we may release as soon as we have
+        # the quantity somewhere. Do not use "qty_available" to get a faster
+        # computation.
+        for warehouse, moves in moves_by_warehouse:
+            moves = self.browse().union(*moves)
+            res.update(moves._get_ordered_available_to_promise_by_warehouse(warehouse))
+        return res
+
+    @api.depends()
+    def _compute_ordered_available_to_promise(self):
+        moves = self.filtered(
+            lambda move: move._should_compute_ordered_available_to_promise()
+        )
+        (self - moves).update(
+            {
+                "ordered_available_to_promise_qty": 0.0,
+                "ordered_available_to_promise_uom_qty": 0.0,
+            }
+        )
+        for move, values in moves._get_ordered_available_to_promise().items():
+            move.update(values)
 
     def _search_ordered_available_to_promise_uom_qty(self, operator, value):
         operator_mapping = {
@@ -347,9 +465,8 @@ class StockMove(models.Model):
         )
 
     def _action_cancel(self):
-        # Unrelease moves that can be, before canceling them.
-        moves_to_unrelease = self.filtered(lambda m: m.unrelease_allowed)
-        moves_to_unrelease.unrelease()
+        # Unrelease moves that must be, before canceling them.
+        self.unrelease()
         super()._action_cancel()
         self.write({"need_release": False})
         return True
@@ -371,11 +488,15 @@ class StockMove(models.Model):
 
     def _prepare_move_split_vals(self, qty):
         vals = super()._prepare_move_split_vals(qty)
+
         # The method set procure_method as 'make_to_stock' by default on split,
-        # but we want to keep 'make_to_order' for chained moves when we split
-        # a partially available move in _run_stock_rule().
+        # but we want to keep 'make_to_order' for chained moves.
+        # Note this has been fixed in v15.0
+        # https://github.com/odoo/odoo/commit/4180afb95112dbb1119fd68b7bd3f2f5e1160422
+        vals.update({"procure_method": self.procure_method})
+
         if self.env.context.get("release_available_to_promise"):
-            vals.update({"procure_method": self.procure_method, "need_release": True})
+            vals.update({"need_release": True})
         return vals
 
     def _get_release_decimal_precision(self):
@@ -389,25 +510,6 @@ class StockMove(models.Model):
         if not float_compare(remaining, 0, precision_digits=precision) > 0:
             return
         return remaining
-
-    def _is_releasable(self):
-        self.ensure_one()
-        if not self.need_release:
-            return 0, 0
-        if self.state not in ("confirmed", "waiting", "done", "cancel"):
-            return 0, 0
-        precision = self._get_release_decimal_precision()
-        available_qty = self.ordered_available_to_promise_qty
-        if float_compare(available_qty, 0, precision_digits=precision) <= 0:
-            return 0, 0
-
-        remaining_qty = self._get_release_remaining_qty()
-        if remaining_qty:
-            if self.picking_id._get_shipping_policy() == "one":
-                # we don't want to deliver unless we can deliver all at
-                # once
-                return 0, 0
-        return available_qty, remaining_qty
 
     def _prepare_procurement_values(self):
         res = super()._prepare_procurement_values()
@@ -424,10 +526,12 @@ class StockMove(models.Model):
         """
         procurement_requests = []
         released_moves = self.env["stock.move"]
+        # Ensure the release_ready field is correctly computed
+        self.invalidate_cache(["release_ready"])
         for move in self:
-            available_qty, remaining_qty = move._is_releasable()
-            if not available_qty:
+            if not move.release_ready:
                 continue
+            remaining_qty = move._get_release_remaining_qty()
             if remaining_qty:
                 move._release_split(remaining_qty)
             released_moves |= move
@@ -462,10 +566,10 @@ class StockMove(models.Model):
             )
         self.env["procurement.group"].run_defer(procurement_requests)
 
-        released_moves._after_release_assign_moves()
-        released_moves._after_release_update_chain()
+        assigned_moves = released_moves._after_release_assign_moves()
+        assigned_moves._after_release_update_chain()
 
-        return released_moves
+        return assigned_moves
 
     def _before_release(self):
         """Hook that aims to be overridden."""
@@ -486,8 +590,12 @@ class StockMove(models.Model):
     def _after_release_assign_moves(self):
         move_ids = []
         for origin_moves in self._get_chained_moves_iterator("move_orig_ids"):
-            move_ids += origin_moves.ids
-        self.env["stock.move"].browse(move_ids)._action_assign()
+            move_ids += origin_moves.filtered(
+                lambda m: m.state not in ("cancel", "done")
+            ).ids
+        moves = self.browse(move_ids)
+        moves._action_assign()
+        return moves
 
     def _release_split(self, remaining_qty):
         """Split move and put remaining_qty to a backorder move."""
@@ -523,12 +631,101 @@ class StockMove(models.Model):
         The loop into the iterator is the current moves.
         """
         moves = self
+        visited_moves = self.browse()
         while moves:
             yield moves
-            moves = moves.mapped(chain_field)
+            visited_moves += moves
+            moves = moves.mapped(chain_field) - visited_moves
+
+    def _return_quantity_in_stock(self, qty_to_return_per_move):
+        """Return a quantity from a list of moves.
+        The quantity to return is in the product uom"""
+        moves_to_return = self.browse([m_id for m_id in qty_to_return_per_move.keys()])
+        moves_per_type = groupby(moves_to_return, lambda m: m.picking_type_id)
+        for picking_type, moves_list in moves_per_type:
+            moves = self.browse().union(*moves_list)
+            pickings = moves.picking_id
+            if not pickings:
+                continue
+            return_type = picking_type.return_picking_type_id
+            wiz_values = {
+                "picking_id": fields.first(pickings).id,
+                "location_id": return_type.default_location_dest_id.id,
+            }
+            product_return_moves = []
+            if not return_type:
+                message = _(
+                    "The operation %(picking_names)s is done and cannot be returned",
+                    picking_names=", ".join(pickings.mapped("name")),
+                )
+                raise UserError(message)
+            for move in moves:
+                # Cannot return an unprocessed move
+                if move.state != "done":
+                    continue
+                product = move.product_id
+                uom = product.uom_id
+                qty_to_return = qty_to_return_per_move.get(move.id, 0)
+                # Cannot return 0 qty
+                if float_is_zero(qty_to_return, precision_rounding=uom.rounding):
+                    continue
+                return_move_vals = {
+                    "product_id": product.id,
+                    "quantity": qty_to_return,
+                    "uom_id": uom.id,
+                    "move_id": move.id,
+                }
+                product_return_moves.append((0, 0, return_move_vals))
+            if product_return_moves:
+                wiz_values["product_return_moves"] = product_return_moves
+                return_wiz = self.env["stock.return.picking"].create(wiz_values)
+                action = return_wiz.create_returns()
+
+                cancel_picking = self.picking_id.browse(action["res_id"])
+                # Do not copy the responsible user from the source picking as somebody
+                # else could scan the new cancel picking
+                cancel_picking.user_id = False
+                
+                returned_moves = return_wiz.product_return_moves.move_id
+                pickings_to_assign = returned_moves.move_dest_ids.picking_id.filtered(
+                    lambda picking: picking.id != cancel_picking.id
+                    and picking.state == "confirmed"
+                )
+                if pickings_to_assign:
+                    pickings_to_assign.action_assign()
+        return True
+
+    def _unrelease_set_returnable_qty_per_move(
+        self, qty_to_return, qty_to_return_per_move
+    ):
+        returnable_qty = 0
+        for move in self:
+            rounding = move.product_id.uom_id.rounding
+            # As a move might have multiple dest ids, we might have
+            # already planned to return a few units already.
+            # Get it, and deduce it from the returnable qty
+            move_qty_planned = qty_to_return_per_move.get(move.id, 0)
+            # A move might already have return moves linked to it, deduce their quantity
+            move_returned_qty = sum(
+                move.returned_move_ids.filtered(lambda m: m.state != "cancel").mapped(
+                    "product_qty"
+                )
+            )
+            move_returnable_qty = min(
+                qty_to_return, move.product_qty - move_returned_qty - move_qty_planned
+            )
+            if float_is_zero(move_returnable_qty, precision_rounding=rounding):
+                continue
+            # Update the quantity
+            qty_to_return_per_move[move.id] += move_returnable_qty
+            qty_to_return -= move_returnable_qty
+            returnable_qty += move_returnable_qty
+            if float_is_zero(qty_to_return, precision_rounding=rounding):
+                break
+        return returnable_qty
 
     def unrelease(self, safe_unrelease=False):
-        """Unrelease unreleasavbe moves
+        """Unrelease unreleasable moves
 
         If safe_unrelease is True, the unreleasaable moves for which the
         processing has already started will be ignored
@@ -536,26 +733,89 @@ class StockMove(models.Model):
         moves_to_unrelease = self.filtered(lambda m: m._is_unreleaseable())
         if safe_unrelease:
             moves_to_unrelease = self.filtered("unrelease_allowed")
-        moves_to_unrelease._check_unrelease_allowed()
+        forbidden_moves = moves_to_unrelease.filtered(lambda m: not m.unrelease_allowed)
+        if forbidden_moves:
+            forbidden_moves._unrelease_not_allowed_error()
         moves_to_unrelease.write({"need_release": True})
-        impacted_picking_ids = set()
 
+        qty_to_return_per_move = defaultdict(float)
         for move in moves_to_unrelease:
+            rounding = move.product_id.uom_id.rounding
+            # When a move is returned, it is going straight to WH/Stock,
+            # skipping all intermediate zones (pick/pack).
+            # That is why we need to keep track of qty returned along the way.
+            # We do not want to return the same goods at each step.
+            # At a given step (pick/pack/ship), qty to return is
+            # move.product_uom_qty - cancelled_qty_at_step - already returned qties
+            qty_to_unrelease = move.product_qty
+            qty_returned_for_move = 0
             iterator = move._get_chained_moves_iterator("move_orig_ids")
-            moves_to_cancel = self.env["stock.move"]
+            moves_to_cancel_for_move = self.env["stock.move"]
+            # backup procure_method as when you don't propagate cancel, the
+            # destination move is forced to make_to_stock
+            procure_method = move.procure_method
             next(iterator)  # skip the current move
             for origin_moves in iterator:
-                origin_moves = origin_moves.filtered(
+                qty_to_cancel = qty_to_unrelease - qty_returned_for_move
+                if float_is_zero(qty_to_cancel, precision_rounding=rounding):
+                    break
+                todo_origin_moves = origin_moves.filtered(
                     lambda m: m.state not in ("done", "cancel")
                 )
-                if origin_moves:
-                    origin_moves = move._split_origins(origin_moves)
-                    impacted_picking_ids.update(origin_moves.mapped("picking_id").ids)
+                qty_canceled = 0
+                if todo_origin_moves:
+                    moves_to_cancel = move._split_origins(
+                        todo_origin_moves, qty=qty_to_cancel
+                    )
                     # avoid to propagate cancel to the original move
-                    origin_moves.write({"propagate_cancel": False})
-                    # origin_moves._action_cancel()
-                    moves_to_cancel |= origin_moves
-            moves_to_cancel._action_cancel()
+                    moves_to_cancel.write({"propagate_cancel": False})
+                    moves_to_cancel_for_move |= moves_to_cancel
+                    qty_canceled = sum(moves_to_cancel.mapped("product_qty"))
+                # checking that for the current step (pick/pack/ship)
+                # move.product_uom_qty == step.cancelled_qty + move.returned_quanty
+                # If not the case, we have to move back goods in stock.
+                qty_to_return = qty_to_cancel - qty_canceled
+                if float_is_zero(qty_to_return, precision_rounding=rounding):
+                    continue
+                done_moves = origin_moves.filtered(lambda m: m.state == "done")
+                # in case of canceled origin_moves, the quantity to return must
+                # be limited to the quantity not consumed
+                done_dest_moves = done_moves.move_dest_ids.filtered(
+                    lambda m: m.state == "done"
+                )
+                returnable_qty = sum(done_moves.mapped("product_qty")) - sum(
+                    done_dest_moves.mapped("product_qty")
+                )
+                qty_to_return = min(qty_to_return, returnable_qty)
+                if float_compare(qty_to_return, 0, precision_rounding=rounding) <= 0:
+                    continue
+                if not move.rule_id.allow_unrelease_return_done_move:
+                    # Without allow_unrelease_return_done_move enabled,
+                    # only moves that aren't done can be unreleased.
+                    msg_args = {
+                        "move_name": move.name,
+                        "done_move_names": ", ".join(done_moves.mapped("name")),
+                    }
+                    message = _(
+                        (
+                            "You cannot unrelease the move %(move_name)s "
+                            "because some origin moves %(done_move_names)s are done"
+                        ),
+                        **msg_args
+                    )
+                    raise UserError(message)
+                # Multiple pickings can satisfy a move
+                # -> len(move.move_orig_ids.picking_id) > 1
+                # Group done_moves per picking, and create returns
+                returnable_qty = done_moves._unrelease_set_returnable_qty_per_move(
+                    qty_to_return, qty_to_return_per_move
+                )
+                qty_returned_for_move += returnable_qty
+
+            moves_to_cancel_for_move._action_cancel()
+            # restore the procure_method overwritten by _action_cancel()
+            move.procure_method = procure_method
+        self._return_quantity_in_stock(qty_to_return_per_move)
         moves_to_unrelease.write({"need_release": True})
         for picking, moves in itertools.groupby(
             moves_to_unrelease, lambda m: m.picking_id
@@ -566,15 +826,19 @@ class StockMove(models.Model):
                 move_names=move_names,
             )
             picking.message_post(body=body)
+            picking.last_release_date = False
 
-    def _split_origins(self, origins):
+    def _split_origins(self, origins, qty=None):
         """Split the origins of the move according to the quantity into the
         move and the quantity in the origin moves.
 
         Return the origins for the move's quantity.
         """
         self.ensure_one()
-        qty = self.product_qty
+        if not qty:
+            qty = self.product_qty
+        # Unreserve goods before the split
+        origins._do_unreserve()
         rounding = self.product_uom.rounding
         new_origin_moves = self.env["stock.move"]
         while float_compare(qty, 0, precision_rounding=rounding) > 0 and origins:
@@ -587,6 +851,9 @@ class StockMove(models.Model):
                 new_origin_moves |= self.create(new_move_vals)
                 break
             origins -= origin
+        # And then do the reservation again
+        origins._action_assign()
+        new_origin_moves._action_assign()
         return new_origin_moves
 
     def _search_picking_for_assignation_domain(self):
@@ -598,3 +865,8 @@ class StockMove(models.Model):
         if self.picking_type_id.prevent_new_move_after_release:
             domain = expression.AND([domain, [("last_release_date", "=", False)]])
         return domain
+
+    def _get_new_picking_values(self):
+        values = super()._get_new_picking_values()
+        values["release_policy"] = values["move_type"]
+        return values

@@ -66,6 +66,7 @@ class ShopfloorSchemaAction(Component):
             "location_src": self._schema_dict_of(self.location()),
             "location_dest": self._schema_dict_of(self.location()),
             "progress": {"type": "float", "nullable": True},
+            "backorders_quantity_done": {"type": "float", "nullable": True},
         }
 
     def product(self):
@@ -100,6 +101,7 @@ class ShopfloorSchemaAction(Component):
                     "to_do": {"type": "float", "required": False},
                 },
             },
+            "total_quantity": {"required": False, "type": "float"},
         }
         if with_packaging:
             schema["packaging"] = self._schema_dict_of(self.packaging())
