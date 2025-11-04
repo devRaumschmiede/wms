@@ -3,10 +3,17 @@
 
 from datetime import datetime
 
+from odoo.tests import tagged
+
 from .common import PromiseReleaseCommonCase
 
 
+@tagged("post_install", "-at_install")
 class TestAvailableToPromiseRelease3steps(PromiseReleaseCommonCase):
+
+    at_install = False
+    post_install = True
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -53,6 +60,9 @@ class TestAvailableToPromiseRelease3steps(PromiseReleaseCommonCase):
         self.assertEqual(self.pack1.state, "cancel")
         self.assertTrue(self.ship1.need_release)
         self.assertFalse(self.ship2.need_release)
+        self.assertTrue(
+            all(m.procure_method == "make_to_order" for m in self.ship1.move_lines)
+        )
         # Check pick has one move cancel and one still assign
         move_active = self.pick1.move_lines.filtered(lambda l: l.state == "assigned")
         move_cancel = self.pick1.move_lines.filtered(lambda l: l.state == "cancel")

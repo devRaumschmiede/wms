@@ -241,6 +241,8 @@ const DeliveryShipment = {
                 key_title: "name",
                 on_title_action: action,
                 title_action_icon: "mdi-upload",
+                // This helps having the transporter package fit in one line
+                title_class: "v-card__title-smaller",
             };
         },
         pack_color: function (pack) {
@@ -427,7 +429,7 @@ const DeliveryShipment = {
                             this.odoo.call("scan_dock", {
                                 barcode: scanned.text,
                                 confirmation:
-                                    this.state.data.confirmation_required || false,
+                                    this.state.data.confirmation_required || "",
                             })
                         );
                     },

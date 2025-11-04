@@ -32,9 +32,10 @@ class TestActionsDataDetailCase(ActionsDataDetailCaseBase):
         )
 
     def test_data_packaging(self):
-        data = self.data_detail.packaging(self.packaging)
-        self.assert_schema(self.schema_detail.packaging(), data)
-        self.assertDictEqual(data, self._expected_packaging(self.packaging))
+        self.packaging.barcode = "barcode"
+        data = self.data_detail.packaging_detail(self.packaging)
+        self.assert_schema(self.schema_detail.packaging_detail(), data)
+        self.assertDictEqual(data, self._expected_packaging_detail(self.packaging))
 
     def test_data_lot(self):
         lot = self.env["stock.production.lot"].create(
@@ -88,6 +89,7 @@ class TestActionsDataDetailCase(ActionsDataDetailCaseBase):
                 "id": self.storage_type_pallet.id,
                 "name": self.storage_type_pallet.name,
             },
+            "total_quantity": sum(package.quant_ids.mapped("quantity")),
         }
         self.assertDictEqual(data, expected)
         data = self.data_detail.package_detail(
@@ -191,12 +193,18 @@ class TestActionsDataDetailCase(ActionsDataDetailCaseBase):
                 "name": move_line.package_id.name,
                 "weight": 20.0,
                 "storage_type": None,
+                "total_quantity": sum(
+                    move_line.package_id.quant_ids.mapped("quantity")
+                ),
             },
             "package_dest": {
                 "id": result_package.id,
                 "name": result_package.name,
                 "weight": 6.0,
                 "storage_type": None,
+                "total_quantity": sum(
+                    move_line.result_package_id.quant_ids.mapped("quantity")
+                ),
             },
             "location_src": self._expected_location(move_line.location_id),
             "location_dest": self._expected_location(move_line.location_dest_id),
@@ -255,12 +263,18 @@ class TestActionsDataDetailCase(ActionsDataDetailCaseBase):
                 "name": move_line.package_id.name,
                 "weight": 30.0,
                 "storage_type": None,
+                "total_quantity": sum(
+                    move_line.package_id.quant_ids.mapped("quantity")
+                ),
             },
             "package_dest": {
                 "id": move_line.result_package_id.id,
                 "name": move_line.result_package_id.name,
                 "weight": 0.0,
                 "storage_type": None,
+                "total_quantity": sum(
+                    move_line.result_package_id.quant_ids.mapped("quantity")
+                ),
             },
             "location_src": self._expected_location(move_line.location_id),
             "location_dest": self._expected_location(move_line.location_dest_id),

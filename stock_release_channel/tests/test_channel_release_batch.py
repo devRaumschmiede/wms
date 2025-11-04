@@ -28,12 +28,12 @@ class TestChannelReleaseBatch(ChannelReleaseCase):
             self.channel.release_next_batch()
 
     def test_release_auto_max_next_batch_no_config(self):
-        self.channel.max_auto_release = 0
+        self.channel.max_batch_mode = 0
         with self.assertRaises(exceptions.UserError):
             self.channel.release_next_batch()
 
     def test_release_auto_max_next_batch(self):
-        self.channel.max_auto_release = 2
+        self.channel.max_batch_mode = 2
         self.channel.release_next_batch()
         # 2 have been released
         self.assertEqual(
@@ -55,12 +55,12 @@ class TestChannelReleaseBatch(ChannelReleaseCase):
         )
 
     def test_release_auto_max_no_next_batch(self):
-        self.pickings.need_release = False  # cheat for getting the right condition
+        action = self.channel.release_next_batch()
         action = self.channel.release_next_batch()
         self._assert_action_nothing_in_the_queue(action)
 
     def test_release_auto_group_commercial_partner(self):
-        self.channel.auto_release = "group_commercial_partner"
+        self.channel.batch_mode = "group_commercial_partner"
         self.channel.release_next_batch()
         self.assertFalse(self.picking.need_release)
         self.assertFalse(self.picking2.need_release)
@@ -68,8 +68,11 @@ class TestChannelReleaseBatch(ChannelReleaseCase):
         self.assertTrue(all(p.need_release) for p in other_pickings)
 
     def test_release_auto_group_commercial_partner_no_next_batch(self):
-        self.channel.auto_release = "group_commercial_partner"
-        self.pickings.need_release = False  # cheat for getting the right condition
+        self.channel.batch_mode = "group_commercial_partner"
+        pickings = self.channel.picking_ids.filtered(lambda p: p.release_ready)
+        for _i in range(0, len(pickings.partner_id.commercial_partner_id)):
+            action = self.channel.release_next_batch()
+            self.assertEqual(action, None)
         action = self.channel.release_next_batch()
         self._assert_action_nothing_in_the_queue(action)
 

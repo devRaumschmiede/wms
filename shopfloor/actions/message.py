@@ -463,6 +463,12 @@ class MessageAction(Component):
             "body": _("Packaging not found in the current transfer."),
         }
 
+    def packaging_dimension_updated(self, packaging):
+        return {
+            "message_type": "success",
+            "body": _("Packaging {} dimension updated.").format(packaging.name),
+        }
+
     def expiration_date_missing(self):
         return {
             "message_type": "error",
@@ -688,6 +694,12 @@ class MessageAction(Component):
         return {
             "message_type": "info",
             "body": _("No lines to process."),
+        }
+
+    def no_lines_to_process_set_quantities(self):
+        return {
+            "message_type": "info",
+            "body": _("No lines to process, set quantities on some"),
         }
 
     def location_empty(self, location):

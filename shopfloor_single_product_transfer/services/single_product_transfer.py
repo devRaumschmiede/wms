@@ -1,4 +1,5 @@
 # Copyright 2022 Camptocamp SA
+# Copyright 2023 Michael Tietz (MT Software) <mtietz@mt-software.de>
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl)
 
 import logging
@@ -97,7 +98,7 @@ class ShopfloorSingleProductTransfer(Component):
         )
 
     def _response_for_set_quantity(
-        self, move_line, message=None, asking_confirmation=False
+        self, move_line, message=None, asking_confirmation=None
     ):
         data = {
             "move_line": self.data.move_line(move_line),
@@ -500,7 +501,7 @@ class ShopfloorSingleProductTransfer(Component):
             return self._response_for_set_quantity(move_line, message=message)
 
     def _set_quantity__check_quantity_done(
-        self, move_line, location=None, package=None, confirmation=False
+        self, move_line, location=None, package=None, confirmation=None
     ):
         rounding = move_line.product_id.uom_id.rounding
         qty_done = move_line.qty_done
@@ -578,13 +579,14 @@ class ShopfloorSingleProductTransfer(Component):
         domain = self._valid_dest_location_for_menu_domain()
         return self.env["stock.location"].search(domain)
 
-    def _set_quantity__check_location(self, move_line, location, confirmation=False):
+    def _set_quantity__check_location(
+        self, move_line, location, package=None, confirmation=False
+    ):
         valid_locations_for_move_line = (
             self._set_quantity__valid_dest_location_for_move_line(move_line)
         )
         valid_locations_for_menu = self._valid_dest_location_for_menu()
         message = False
-        asking_confirmation = False
         if location in valid_locations_for_move_line:
             # scanned location is valid, return no response
             pass
@@ -592,20 +594,22 @@ class ShopfloorSingleProductTransfer(Component):
             location in valid_locations_for_menu
             and self.work.menu.allow_alternative_destination
         ):
-            # Considered valid if scan confirmed
-            if not confirmation:
+            if confirmation:
+                # Confirmation is valid, return no response
+                pass
+            else:
                 # Ask for confirmation
                 orig_location = move_line.location_dest_id
                 message = self.msg_store.confirm_location_changed(
                     orig_location, location
                 )
-                asking_confirmation = True
+                confirmation = location.barcode
         else:
             # Invalid location, return an error
             message = self.msg_store.dest_location_not_allowed()
         if message:
             return self._response_for_set_quantity(
-                move_line, message=message, asking_confirmation=asking_confirmation
+                move_line, message=message, asking_confirmation=confirmation or None
             )
 
     def _lock_lines(self, lines):
@@ -634,7 +638,7 @@ class ShopfloorSingleProductTransfer(Component):
             checkout_sync._sync_checkout(lines, location)
         lines.location_dest_id = location
 
-    def _set_quantity__post_move(self, move_line, location, confirmation=False):
+    def _set_quantity__post_move(self, move_line, location, confirmation=None):
         # TODO qty_done = 0: transfer_no_qty_done
         # TODO qty done < product_qty: transfer_confirm_done
         self._write_destination_on_lines(move_line, location)
@@ -662,13 +666,15 @@ class ShopfloorSingleProductTransfer(Component):
         # backorder, which should not be the case.
         # See if there's a way to identify the moves
         # generated through this mechanism and avoid creating them.
-        move_line._split_partial_quantity()
+        new_move_line = move_line._split_partial_quantity()
         new_move = move_line.move_id.split_other_move_lines(
             move_line, intersection=True
         )
         if new_move:
             # A new move is created in case of partial quantity
             new_move.extract_and_action_done()
+            stock = self._actions_for("stock")
+            stock.unmark_move_line_as_picked(new_move_line)
             return
         # In case of full quantity, post the initial move
         move_line.move_id.extract_and_action_done()
@@ -690,22 +696,36 @@ class ShopfloorSingleProductTransfer(Component):
     def _set_quantity__by_location_handlers(self):
         return [
             self._set_quantity__check_location,
-            self._set_quantity__post_move,
         ]
 
-    def _set_quantity__by_location(self, move_line, location, confirmation=False):
+    def _set_quantity__by_location(
+        self, move_line, location, package=None, confirmation=False
+    ):
         # We're about to leave the `set_quantity` screen.
         # First ensure that quantity is valid.
         invalid_qty_response = self._set_quantity__check_quantity_done(move_line)
         if invalid_qty_response:
             return invalid_qty_response
-        move_line.result_package_id = False
+        # Do not remove the result_package_id
+        # when it was previously set by _set_quantity__by_package
+        # because _set_quantity__by_location will be then called
+        # with the scanned empty package
+        if not package:
+            move_line.result_package_id = False
         handlers = self._set_quantity__by_location_handlers()
+        # At this point the result_package_id is already
+        # set by _set_quantity__by_package to scanned package
+        # or set to False by this method
+        # Because of this call the handlers without the package
+        # to ensure the move_line's result_package_id gets checked
         response = self._use_handlers(
             handlers, move_line, location, confirmation=confirmation
         )
         if response:
             return response
+        return self._set_quantity__post_move(
+            move_line, location, confirmation=confirmation
+        )
 
     def _set_quantity__by_package(self, move_line, package, confirmation=False):
         # We're about to leave the `set_quantity` screen.
@@ -718,10 +738,18 @@ class ShopfloorSingleProductTransfer(Component):
             location = package.location_id
             handlers = self._set_quantity__by_location_handlers()
             response = self._use_handlers(
-                handlers, move_line, location, confirmation=confirmation
+                handlers,
+                move_line,
+                location,
+                package=package,
+                confirmation=confirmation,
             )
+            if response:
+                return response
             move_line.result_package_id = package
-            return response
+            return self._set_quantity__post_move(
+                move_line, location, confirmation=confirmation
+            )
         # Else, go to `set_location` screen
         move_line.result_package_id = package
         return self._response_for_set_location(move_line, package)
@@ -826,7 +854,7 @@ class ShopfloorSingleProductTransfer(Component):
     def scan_product__action_cancel(self):
         return self._response_for_select_location_or_package()
 
-    def set_quantity(self, selected_line_id, barcode, quantity, confirmation=False):
+    def set_quantity(self, selected_line_id, barcode, quantity, confirmation=None):
         """Sets quantity done if a product is scanned,
         posts the move if a location is scanned
         or moves the products to a package if a package is scanned.
@@ -855,7 +883,8 @@ class ShopfloorSingleProductTransfer(Component):
         search_result = search.find(barcode, types=handlers_by_type.keys())
         handler = handlers_by_type.get(search_result.type)
         if handler:
-            return handler(move_line, search_result.record, confirmation=confirmation)
+            confirmed = confirmation == barcode
+            return handler(move_line, search_result.record, confirmation=confirmed)
         message = self.msg_store.barcode_not_found()
         return self._response_for_set_quantity(move_line, message=message)
 
@@ -880,10 +909,10 @@ class ShopfloorSingleProductTransfer(Component):
         }
         search = self._actions_for("search")
         search_result = search.find(barcode, types=handlers_by_type.keys())
+        package = self.env["stock.quant.package"].browse(package_id)
         handler = handlers_by_type.get(search_result.type)
         if handler:
-            return handler(move_line, search_result.record)
-        package = self.env["stock.quant.package"].browse(package_id)
+            return handler(move_line, search_result.record, package=package)
         message = self.msg_store.barcode_not_found()
         return self._response_for_set_location(move_line, package, message=message)
 
@@ -914,7 +943,7 @@ class ShopfloorSingleProductTransferValidator(Component):
             "selected_line_id": {"coerce": to_int, "required": True, "type": "integer"},
             "barcode": {"required": True, "type": "string"},
             "quantity": {"coerce": to_float, "required": True, "type": "float"},
-            "confirmation": {"type": "boolean", "nullable": True, "required": False},
+            "confirmation": {"type": "string", "nullable": True, "required": False},
         }
 
     def set_quantity__action_cancel(self):
@@ -1014,7 +1043,7 @@ class ShopfloorSingleProductTransferValidatorResponse(Component):
     def _schema_set_quantity(self):
         return {
             "move_line": {"type": "dict", "schema": self.schemas.move_line()},
-            "asking_confirmation": {"type": "boolean", "nullable": True},
+            "asking_confirmation": {"type": "string", "nullable": True},
         }
 
     @property

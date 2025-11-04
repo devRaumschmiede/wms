@@ -27,6 +27,7 @@ class ShopfloorSchemaAction(Component):
             "scheduled_date": {"type": "string", "nullable": False, "required": True},
             "progress": {"type": "float", "nullable": True},
             "location_dest": self._schema_dict_of(self.location(), required=False),
+            "priority": {"type": "string", "nullable": True, "required": False},
         }
 
     def move_line(self, with_packaging=False, with_picking=False):
@@ -100,6 +101,7 @@ class ShopfloorSchemaAction(Component):
                     "to_do": {"type": "float", "required": False},
                 },
             },
+            "total_quantity": {"required": False, "type": "float"},
         }
         if with_packaging:
             schema["packaging"] = self._schema_dict_of(self.packaging())

@@ -306,7 +306,7 @@ class ZonePickingCommonCase(CommonCase):
         move_lines,
         message=None,
         popup=None,
-        confirmation_required=False,
+        confirmation_required=None,
         product=None,
         sublocation=None,
         location_first=None,
@@ -330,6 +330,9 @@ class ZonePickingCommonCase(CommonCase):
             data_move_line[
                 "location_will_be_empty"
             ] = move_line.location_id.planned_qty_in_location_is_empty(move_line)
+            data_move_line[
+                "handle_complete_mix_pack"
+            ] = self.service._handle_complete_mix_pack(move_line.package_id)
         self.assert_response(
             response,
             next_state=state,
@@ -346,7 +349,7 @@ class ZonePickingCommonCase(CommonCase):
         move_lines,
         message=None,
         popup=None,
-        confirmation_required=False,
+        confirmation_required=None,
         product=None,
         sublocation=None,
         location_first=False,
@@ -375,8 +378,9 @@ class ZonePickingCommonCase(CommonCase):
         picking_type,
         move_line,
         message=None,
-        confirmation_required=False,
+        confirmation_required=None,
         qty_done=None,
+        handle_complete_mix_pack=False,
     ):
         expected_move_line = self.data.move_line(move_line, with_picking=True)
         if qty_done is not None:
@@ -393,6 +397,7 @@ class ZonePickingCommonCase(CommonCase):
                 "move_line": expected_move_line,
                 "confirmation_required": confirmation_required,
                 "allow_alternative_destination_package": allow_alternative_destination_package,
+                "handle_complete_mix_pack": handle_complete_mix_pack,
             },
             message=message,
         )
@@ -404,8 +409,9 @@ class ZonePickingCommonCase(CommonCase):
         picking_type,
         move_line,
         message=None,
-        confirmation_required=False,
+        confirmation_required=None,
         qty_done=None,
+        handle_complete_mix_pack=False,
     ):
         self._assert_response_set_line_destination(
             "set_line_destination",
@@ -416,6 +422,7 @@ class ZonePickingCommonCase(CommonCase):
             message=message,
             confirmation_required=confirmation_required,
             qty_done=qty_done,
+            handle_complete_mix_pack=handle_complete_mix_pack,
         )
 
     def _assert_response_zero_check(
@@ -501,7 +508,7 @@ class ZonePickingCommonCase(CommonCase):
         picking_type,
         move_line,
         message=None,
-        confirmation_required=False,
+        confirmation_required=None,
     ):
         self.assert_response(
             response,
@@ -522,7 +529,7 @@ class ZonePickingCommonCase(CommonCase):
         picking_type,
         move_line,
         message=None,
-        confirmation_required=False,
+        confirmation_required=None,
     ):
         self._assert_response_unload_set_destination(
             "unload_set_destination",
@@ -542,7 +549,7 @@ class ZonePickingCommonCase(CommonCase):
         picking_type,
         move_lines,
         message=None,
-        confirmation_required=False,
+        confirmation_required=None,
     ):
         self.assert_response(
             response,
@@ -563,7 +570,7 @@ class ZonePickingCommonCase(CommonCase):
         picking_type,
         move_lines,
         message=None,
-        confirmation_required=False,
+        confirmation_required=None,
     ):
         self._assert_response_unload_all(
             "unload_all",
