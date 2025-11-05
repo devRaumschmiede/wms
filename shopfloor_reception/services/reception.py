@@ -270,7 +270,12 @@ class Reception(Component):
                     line = move_line
                     break
         if not line:
-            values = move._prepare_move_line_vals()
+            qty_todo_remaining = max(
+                0,
+                move.product_uom_qty
+                - sum(move.move_line_ids.mapped("product_uom_qty")),
+            )
+            values = move._prepare_move_line_vals(quantity=qty_todo_remaining)
             line = self.env["stock.move.line"].create(values)
         return self._scan_line__assign_user(picking, line, qty_done)
 
@@ -869,6 +874,7 @@ class Reception(Component):
             "product": (
                 self._scan_document__by_product
                 if not self.work.menu.scan_location_or_pack_first
+                and self.work.menu.allow_select_document_by_product
                 else None
             ),
             "packaging": self._scan_document__by_packaging,
@@ -1298,7 +1304,12 @@ class Reception(Component):
         lines_with_qty_todo = selected_line.move_id.move_line_ids.filtered(
             lambda line: line.state not in ("cancel", "done")
             and line.product_uom_qty > 0
-        )
+        #     --
+        # new_move_line = selected_line._split_partial_quantity()
+        # new_move = selected_line.move_id.split_other_move_lines(
+        #     selected_line, intersection=True
+        # )
+        # --
         move = selected_line.move_id
         lock = self._actions_for("lock")
         lock.for_update(move)
@@ -1492,6 +1503,16 @@ class ShopfloorReceptionValidator(Component):
             "quantity": {"type": "float"},
             "barcode": {"type": "string"},
             "confirmation": {"type": "string", "nullable": True},
+        }
+
+    def set_quantity__cancel_action(self):
+        return {
+            "picking_id": {"coerce": to_int, "required": True, "type": "integer"},
+            "selected_line_id": {
+                "coerce": to_int,
+                "type": "integer",
+                "required": True,
+            },
         }
 
     def set_quantity__cancel_action(self):
