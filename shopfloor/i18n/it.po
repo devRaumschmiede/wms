@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 14.0\n"
 "Report-Msgid-Bugs-To: \n"
-"PO-Revision-Date: 2024-04-04 11:40+0000\n"
+"PO-Revision-Date: 2025-05-12 08:24+0000\n"
 "Last-Translator: mymage <stefano.consolaro@mymage.it>\n"
 "Language-Team: none\n"
 "Language: it\n"
@@ -14,7 +14,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 4.17\n"
+"X-Generator: Weblate 5.10.4\n"
 
 #. module: shopfloor
 #: model:ir.model.fields,help:shopfloor.field_shopfloor_menu__pick_pack_same_time
@@ -603,7 +603,7 @@ msgstr "Ubicazione {} vuota"
 #: code:addons/shopfloor/actions/message.py:0
 #, python-format
 msgid "Lot changed"
-msgstr ""
+msgstr "Lotto modificato"
 
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
@@ -818,6 +818,18 @@ msgstr "Nessuna quantità elaborata, impossibile completare il trasferimento."
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
 #, python-format
+msgid "No transfer found for %s %s"
+msgstr "Nessun trasferimento trovato per %s %s"
+
+#. module: shopfloor
+#: code:addons/shopfloor/actions/message.py:0
+#, python-format
+msgid "No transfer found for barcode %s"
+msgstr "Nessun trasferimento trovato per il codice a barre %s"
+
+#. module: shopfloor
+#: code:addons/shopfloor/actions/message.py:0
+#, python-format
 msgid "No transfer found for the scanned lot."
 msgstr "Nessun trasferimento trovato per il codice scansionato."
 
@@ -977,20 +989,26 @@ msgstr "Il collo {} è già in uso."
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
 #, python-format
+msgid "Package {} is empty, scan a location."
+msgstr "Il collo {} è vuoto, leggere una ubicazione."
+
+#. module: shopfloor
+#: code:addons/shopfloor/actions/message.py:0
+#, python-format
 msgid "Package {} is not available in transfer {}."
 msgstr "Il collo {} non è disponibile nel trasferimento {}."
 
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
 #, python-format
-msgid "Package {} is not empty."
-msgstr "Il collo {} non è vuoto."
+msgid "Package {} is not empty anmyore."
+msgstr "Il collo {} non è più vuoto."
 
 #. module: shopfloor
-#: code:addons/shopfloor/services/checkout.py:0
+#: code:addons/shopfloor/actions/message.py:0
 #, python-format
-msgid "Package {} is not in the current transfer."
-msgstr "Il collo {} non è nel trasferimento attuale."
+msgid "Package {} is not empty."
+msgstr "Il collo {} non è vuoto."
 
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
@@ -1078,7 +1096,7 @@ msgstr "Conteggio prelievi"
 #. module: shopfloor
 #: model:ir.model,name:shopfloor.model_stock_picking_type
 msgid "Picking Type"
-msgstr "Tipologia prelievo"
+msgstr "Tipo prelievo"
 
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
@@ -1139,15 +1157,15 @@ msgid "Processing reserved quantities is not allowed for menu {}."
 msgstr "Elaborazione quantità prenotate non consentita da menu {}."
 
 #. module: shopfloor
+#: code:addons/shopfloor/actions/message.py:0
+#, python-format
+msgid "Product %s is not in the current transfer."
+msgstr "Il prodotto %s non è nel trasferimento attuale."
+
+#. module: shopfloor
 #: model:ir.model,name:shopfloor.model_stock_move_line
 msgid "Product Moves (Stock Move Line)"
 msgstr "Movimenti prodotto (riga movimento di magazzino)"
-
-#. module: shopfloor
-#: code:addons/shopfloor/actions/message.py:0
-#, python-format
-msgid "Product is not in the current transfer."
-msgstr "Il prodotto non è nel trasferimento attuale."
 
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
@@ -1211,6 +1229,12 @@ msgstr "Riga movimento prenotata"
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
 #, python-format
+msgid "Reserved for %(picking_type)s %(picking_name)s"
+msgstr "Prenotato per %(picking_type)s %(picking_name)s"
+
+#. module: shopfloor
+#: code:addons/shopfloor/actions/message.py:0
+#, python-format
 msgid "Restart the operation, someone has canceled it."
 msgstr "Riavvia operazione, qualcuno l'ha annullata."
 
@@ -1266,7 +1290,7 @@ msgstr "Scansionare il collo"
 #: code:addons/shopfloor/actions/message.py:0
 #, python-format
 msgid "Scanned lot differs from the previous scan: %(lot)s."
-msgstr ""
+msgstr "Il lotto letto è diverso da quello letto in precedenza: %(lot)s."
 
 #. module: shopfloor
 #: code:addons/shopfloor/models/shopfloor_menu.py:0
@@ -1537,11 +1561,11 @@ msgstr ""
 #: code:addons/shopfloor/models/stock_picking.py:0
 #, python-format
 msgid ""
-"The backorder <a href=\"#\" data-oe-model=\"stock.picking\" data-oe-id=\"%d"
-"\">%s</a> has been created."
+"The backorder <a href=\"#\" data-oe-model=\"stock.picking\" data-oe-"
+"id=\"%d\">%s</a> has been created."
 msgstr ""
-"È stato creato l'ordine residuo <a href=\"#\" data-oe-model=\"stock.picking"
-"\" data-oe-id=\"%d\">%s</a> ."
+"È stato creato l'ordine residuo <a href=\"#\" data-oe-model=\"stock."
+"picking\" data-oe-id=\"%d\">%s</a> ."
 
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
@@ -1686,7 +1710,7 @@ msgstr "Questa ubicazione richiede colli. Scansionare un collo destinazione."
 #: code:addons/shopfloor/actions/message.py:0
 #, python-format
 msgid "This lot does not exist anymore."
-msgstr ""
+msgstr "Questo loto non esiste più."
 
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
@@ -1770,6 +1794,15 @@ msgstr "Trasferimento"
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
 #, python-format
+msgid ""
+"Transfer has been canceled. This cannot be processed using this scenario"
+msgstr ""
+"Il trasferimento è stato annullato. Non può essere elaborato usando questo "
+"scenario"
+
+#. module: shopfloor
+#: code:addons/shopfloor/actions/message.py:0
+#, python-format
 msgid "Transfer {} complete"
 msgstr "Trasferimento {} completo"
 
@@ -1800,6 +1833,7 @@ msgstr ""
 #, python-format
 msgid "Unable to find a line with the same product but different lot."
 msgstr ""
+"Impossibile trovare una riga con lo stesso prodotto ma un lotto diverso."
 
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
@@ -2000,6 +2034,9 @@ msgid ""
 "lot? Scan it again to confirm. The first line matching this product will be "
 "updated. "
 msgstr ""
+"Si è scansionato un lotto diverso con lo stesso prodotto, si vuole cambiare "
+"lotto? Scansionarlo di nuovo per confermare. La prima riga corrispondente a "
+"questo prodotto verrà aggiornata. "
 
 #. module: shopfloor
 #: code:addons/shopfloor/actions/message.py:0
@@ -2057,6 +2094,14 @@ msgstr "{} non trovato nel trasferimento attuale o già nel collo."
 #, python-format
 msgid "{} {} put in {}"
 msgstr "{} {} metti in {}"
+
+#, python-format
+#~ msgid "Package {} is not in the current transfer."
+#~ msgstr "Il collo {} non è nel trasferimento attuale."
+
+#, python-format
+#~ msgid "Product is not in the current transfer."
+#~ msgstr "Il prodotto non è nel trasferimento attuale."
 
 #, python-format
 #~ msgid "Lot is not in the current transfer."

@@ -48,13 +48,13 @@ class Reception(Component):
     _usage = "reception"
     _description = __doc__
 
-    def _check_picking_status(self, pickings):
+    def _check_picking_processible(self, pickings):
         # When returns are allowed,
         # the created picking might be empty and cannot be assigned.
         states = ["assigned"]
         if self.work.menu.allow_return:
             states.append("draft")
-        return super()._check_picking_status(pickings, states=states)
+        return super()._check_picking_processible(pickings, states=states)
 
     def _move_line_by_product(self, product):
         return self.env["stock.move.line"].search(
@@ -339,7 +339,7 @@ class Reception(Component):
                 message=self.msg_store.cannot_move_something_in_picking_type()
             )
         if reception_pickings:
-            message = self._check_picking_status(reception_pickings)
+            message = self._check_picking_processible(reception_pickings)
             if message:
                 return self._response_for_select_document(
                     pickings=reception_pickings, message=message
@@ -425,7 +425,7 @@ class Reception(Component):
         # If we have an origin picking but no origin move, then user
         # scanned a wrong product. Warn him about this.
         if origin_moves and not origin_moves_for_product:
-            message = self.msg_store.product_not_found_in_current_picking()
+            message = self.msg_store.product_not_found_in_current_picking(product)
             return self._response_for_select_move(picking, message=message)
         if origin_moves_for_product:
             return_move = self._scan_line__create_return_move(
@@ -959,7 +959,7 @@ class Reception(Component):
           - set_quantity: Packaging / Product has been scanned. Not tracked product
         """
         picking = self.env["stock.picking"].browse(picking_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_select_move(picking, message=message)
         handlers_by_type = {
@@ -993,7 +993,7 @@ class Reception(Component):
           - select_document: Mark as done
         """
         picking = self.env["stock.picking"].browse(picking_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_select_move(picking, message=message)
         if all(line.qty_done == 0 for line in picking.move_line_ids):
@@ -1001,13 +1001,8 @@ class Reception(Component):
             return self._response_for_select_move(
                 picking, message=self.msg_store.transfer_no_qty_done()
             )
-        if not confirmation:
-            # Do not create a backorder if this is a shopfloor return.
-            if picking.is_shopfloor_created and self.work.menu.allow_return:
-                picking.with_context(cancel_backorder=True)._action_done()
-                return self._response_for_select_document(
-                    message=self.msg_store.transfer_done_success(picking)
-                )
+        cancel_backorder = picking.is_shopfloor_created and self.work.menu.allow_return
+        if not confirmation and not cancel_backorder:
             to_backorder = picking._check_backorder()
             if to_backorder:
                 # Not all lines are fully done, ask the user to confirm the
@@ -1019,18 +1014,21 @@ class Reception(Component):
             return self._response_for_confirm_done(
                 picking, message=self.msg_store.need_confirmation()
             )
-        self._handle_backorder(picking)
+        self._handle_backorder(picking, cancel_backorder)
         return self._response_for_select_document(
             message=self.msg_store.transfer_done_success(picking)
         )
 
-    def _handle_backorder(self, picking):
+    def _handle_backorder(self, picking, cancel_backorder=False):
         """This method handles backorders that could be created at picking confirm."""
+        if cancel_backorder:
+            picking = picking.with_context(cancel_backorder=True)
         backorders_before = picking.backorder_ids
         picking._action_done()
-        backorders_after = picking.backorder_ids - backorders_before
-        # Remove user_id on the backorder, if any
-        backorders_after.user_id = False
+        if not cancel_backorder:
+            backorders_after = picking.backorder_ids - backorders_before
+            # Remove user_id on backorder, if any
+            backorders_after.user_id = False
 
     def set_lot(
         self, picking_id, selected_line_id, lot_name=None, expiration_date=None
@@ -1051,7 +1049,7 @@ class Reception(Component):
         """
         picking = self.env["stock.picking"].browse(picking_id)
         selected_line = self.env["stock.move.line"].browse(selected_line_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_set_lot(picking, selected_line, message=message)
         if not selected_line.exists():
@@ -1082,7 +1080,7 @@ class Reception(Component):
 
     def set_lot_confirm_action(self, picking_id, selected_line_id):
         picking = self.env["stock.picking"].browse(picking_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         selected_line = self.env["stock.move.line"].browse(selected_line_id)
         if message:
             return self._response_for_set_lot(picking, selected_line, message=message)
@@ -1167,7 +1165,7 @@ class Reception(Component):
         """
         picking = self.env["stock.picking"].browse(picking_id)
         selected_line = self.env["stock.move.line"].browse(selected_line_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_set_quantity(
                 picking, selected_line, message=message
@@ -1196,7 +1194,7 @@ class Reception(Component):
     def set_quantity__cancel_action(self, picking_id, selected_line_id):
         picking = self.env["stock.picking"].browse(picking_id)
         selected_line = self.env["stock.move.line"].browse(selected_line_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_set_quantity(
                 picking, selected_line, message=message
@@ -1234,7 +1232,7 @@ class Reception(Component):
     def process_with_existing_pack(self, picking_id, selected_line_id, quantity):
         picking = self.env["stock.picking"].browse(picking_id)
         selected_line = self.env["stock.move.line"].browse(selected_line_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_set_quantity(
                 picking, selected_line, message=message
@@ -1249,7 +1247,7 @@ class Reception(Component):
     def process_with_new_pack(self, picking_id, selected_line_id, quantity):
         picking = self.env["stock.picking"].browse(picking_id)
         selected_line = self.env["stock.move.line"].browse(selected_line_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_set_quantity(
                 picking, selected_line, message=message
@@ -1265,7 +1263,7 @@ class Reception(Component):
     def process_without_pack(self, picking_id, selected_line_id, quantity):
         picking = self.env["stock.picking"].browse(picking_id)
         selected_line = self.env["stock.move.line"].browse(selected_line_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_set_quantity(
                 picking, selected_line, message=message
@@ -1364,7 +1362,7 @@ class Reception(Component):
         """
         picking = self.env["stock.picking"].browse(picking_id)
         selected_line = self.env["stock.move.line"].browse(selected_line_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_set_destination(
                 picking, selected_line, message=message
@@ -1426,7 +1424,7 @@ class Reception(Component):
         """
         picking = self.env["stock.picking"].browse(picking_id)
         selected_line = self.env["stock.move.line"].browse(selected_line_id)
-        message = self._check_picking_status(picking)
+        message = self._check_picking_processible(picking)
         if message:
             return self._response_for_select_dest_package(
                 picking, selected_line, message=message

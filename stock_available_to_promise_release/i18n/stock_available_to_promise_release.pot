@@ -14,23 +14,6 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. module: stock_available_to_promise_release
-#: code:addons/stock_available_to_promise_release/models/stock_move.py:0
-#, python-format
-msgid ""
-"\n"
-"- Origin picking(s):\n"
-"\t -%(picking_names)s."
-msgstr ""
-
-#. module: stock_available_to_promise_release
-#: code:addons/stock_available_to_promise_release/models/stock_move.py:0
-#, python-format
-msgid ""
-"\n"
-"- Picking: %(picking_name)s."
-msgstr ""
-
-#. module: stock_available_to_promise_release
 #: model:ir.model.fields,field_description:stock_available_to_promise_release.field_stock_picking__release_ready_count
 msgid "# of moves ready"
 msgstr ""
@@ -38,6 +21,12 @@ msgstr ""
 #. module: stock_available_to_promise_release
 #: model:ir.model.fields,field_description:stock_available_to_promise_release.field_stock_picking__need_release_count
 msgid "# of need release moves"
+msgstr ""
+
+#. module: stock_available_to_promise_release
+#: code:addons/stock_available_to_promise_release/models/stock_move.py:0
+#, python-format
+msgid "- blocking transfer(s): %(picking_names)s"
 msgstr ""
 
 #. module: stock_available_to_promise_release
@@ -188,6 +177,15 @@ msgid ""
 "If checked, once a delivery picking has been released, no more moves will be"
 " added to it. For example, if you add lines in the origin sales order, the "
 "new moves will be added to a new delivery."
+msgstr ""
+
+#. module: stock_available_to_promise_release
+#: model:ir.model.fields,help:stock_available_to_promise_release.field_stock_location_route__allow_unrelease_return_done_move
+#: model:ir.model.fields,help:stock_available_to_promise_release.field_stock_rule__allow_unrelease_return_done_move
+msgid ""
+"If checked, unreleasing the delivery may create a new inverse internal "
+"operation on the last done pulled transfer. Otherwise, you won't be able to "
+"unrelease as soon as one of the pulled transfer is done"
 msgstr ""
 
 #. module: stock_available_to_promise_release
@@ -367,6 +365,12 @@ msgid "Release based on Available to Promise"
 msgstr ""
 
 #. module: stock_available_to_promise_release
+#: model:ir.model.fields,field_description:stock_available_to_promise_release.field_stock_location_route__allow_unrelease_return_done_move
+#: model:ir.model.fields,field_description:stock_available_to_promise_release.field_stock_rule__allow_unrelease_return_done_move
+msgid "Reverse done transfer on cancellation"
+msgstr ""
+
+#. module: stock_available_to_promise_release
 #: model_terms:ir.ui.view,arch_db:stock_available_to_promise_release.view_move_release_form
 msgid "Shipment date"
 msgstr ""
@@ -423,6 +427,12 @@ msgstr ""
 msgid ""
 "The following moves have been un-released: \n"
 "%(move_names)s"
+msgstr ""
+
+#. module: stock_available_to_promise_release
+#: code:addons/stock_available_to_promise_release/models/stock_move.py:0
+#, python-format
+msgid "The operation %(picking_names)s is done and cannot be returned"
 msgstr ""
 
 #. module: stock_available_to_promise_release
@@ -541,7 +551,7 @@ msgstr ""
 #. module: stock_available_to_promise_release
 #: code:addons/stock_available_to_promise_release/models/stock_move.py:0
 #, python-format
-msgid "You are not allowed to unrelease this move %(move_name)s."
+msgid "You are not allowed to unrelease those deliveries:\n"
 msgstr ""
 
 #. module: stock_available_to_promise_release

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 14.0\n"
 "Report-Msgid-Bugs-To: \n"
-"PO-Revision-Date: 2024-02-05 09:39+0000\n"
+"PO-Revision-Date: 2025-05-12 08:24+0000\n"
 "Last-Translator: mymage <stefano.consolaro@mymage.it>\n"
 "Language-Team: none\n"
 "Language: it\n"
@@ -14,24 +14,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 4.17\n"
-
-#. module: stock_available_to_promise_release
-#: code:addons/stock_available_to_promise_release/models/stock_move.py:0
-#, python-format
-msgid ""
-"\n"
-"- Origin picking(s):\n"
-"\t -%(picking_names)s."
-msgstr ""
-
-#. module: stock_available_to_promise_release
-#: code:addons/stock_available_to_promise_release/models/stock_move.py:0
-#, python-format
-msgid ""
-"\n"
-"- Picking: %(picking_name)s."
-msgstr ""
+"X-Generator: Weblate 5.10.4\n"
 
 #. module: stock_available_to_promise_release
 #: model:ir.model.fields,field_description:stock_available_to_promise_release.field_stock_picking__release_ready_count
@@ -42,6 +25,12 @@ msgstr "N° di movimenti pronti"
 #: model:ir.model.fields,field_description:stock_available_to_promise_release.field_stock_picking__need_release_count
 msgid "# of need release moves"
 msgstr "N° di movimenti che richiedono il rilascio"
+
+#. module: stock_available_to_promise_release
+#: code:addons/stock_available_to_promise_release/models/stock_move.py:0
+#, python-format
+msgid "- blocking transfer(s): %(picking_names)s"
+msgstr "- blocco trasferimento(i): %(picking_names)s"
 
 #. module: stock_available_to_promise_release
 #: model_terms:ir.ui.view,arch_db:stock_available_to_promise_release.view_picking_release_form
@@ -206,6 +195,23 @@ msgid ""
 "added to it. For example, if you add lines in the origin sales order, the "
 "new moves will be added to a new delivery."
 msgstr ""
+"Se selezionata, una volta che un prelievo di consegna è stato rilasciato, "
+"non vi verranno più aggiunti movimenti. Per esempio, se si aggiungono righe "
+"nell'ordine di vendita originale, i nuovi movimenti verranno aggiunti a una "
+"nuova consegna."
+
+#. module: stock_available_to_promise_release
+#: model:ir.model.fields,help:stock_available_to_promise_release.field_stock_location_route__allow_unrelease_return_done_move
+#: model:ir.model.fields,help:stock_available_to_promise_release.field_stock_rule__allow_unrelease_return_done_move
+msgid ""
+"If checked, unreleasing the delivery may create a new inverse internal "
+"operation on the last done pulled transfer. Otherwise, you won't be able to "
+"unrelease as soon as one of the pulled transfer is done"
+msgstr ""
+"Se selezionata, l'annullamento del rilascio della consegna potrebbe creare "
+"una nuova operazione interna inversa sull'ultimo trasferimento prelevato "
+"eseguito. In caso contrario, non sarà possibile annullare il rilascio non "
+"appena uno dei trasferimenti prelevati viene completato"
 
 #. module: stock_available_to_promise_release
 #: model:ir.model.fields,help:stock_available_to_promise_release.field_stock_picking_type__unrelease_on_backorder
@@ -216,11 +222,17 @@ msgid ""
 "that were not delivered are put back in need for release and the unprocessed "
 "internal pulled moves are canceled."
 msgstr ""
+"Se selezionata, quando viene creato un ordine residuo (cioè alla validazione "
+"della consegna) i movimenti nell'ordine residuo non vengono rilasciati "
+"finché non derivano da una rotta configurata per il rilascio manuale dei "
+"movimenti. Questo significa che i movimenti che non sono stati consegnati "
+"vengono reimpostati per la richiesta di rilascio e vengono creati movimenti "
+"di prelievo non elaborati."
 
 #. module: stock_available_to_promise_release
 #: model:ir.model,name:stock_available_to_promise_release.model_stock_location
 msgid "Inventory Locations"
-msgstr ""
+msgstr "Ubicazioni di inventario"
 
 #. module: stock_available_to_promise_release
 #: model:ir.model,name:stock_available_to_promise_release.model_stock_location_route
@@ -309,7 +321,7 @@ msgstr "Ordinato disponibile alle promesse (q.tà reale)"
 #. module: stock_available_to_promise_release
 #: model:ir.model,name:stock_available_to_promise_release.model_stock_picking_type
 msgid "Picking Type"
-msgstr "Tipologia prelievo"
+msgstr "Tipo prelievo"
 
 #. module: stock_available_to_promise_release
 #: model_terms:ir.ui.view,arch_db:stock_available_to_promise_release.view_move_release_tree
@@ -387,6 +399,12 @@ msgid "Release based on Available to Promise"
 msgstr "Rilascio in base alla disponibilità alle promesse"
 
 #. module: stock_available_to_promise_release
+#: model:ir.model.fields,field_description:stock_available_to_promise_release.field_stock_location_route__allow_unrelease_return_done_move
+#: model:ir.model.fields,field_description:stock_available_to_promise_release.field_stock_rule__allow_unrelease_return_done_move
+msgid "Reverse done transfer on cancellation"
+msgstr "Inverti trasferimento eseguito all'annullamento"
+
+#. module: stock_available_to_promise_release
 #: model_terms:ir.ui.view,arch_db:stock_available_to_promise_release.view_move_release_form
 msgid "Shipment date"
 msgstr "Data spedizione"
@@ -448,6 +466,12 @@ msgid ""
 msgstr ""
 "I segenti movimenti sono stati trattenuti: \n"
 "%(move_names)s"
+
+#. module: stock_available_to_promise_release
+#: code:addons/stock_available_to_promise_release/models/stock_move.py:0
+#, python-format
+msgid "The operation %(picking_names)s is done and cannot be returned"
+msgstr "L'operazione %(picking_names)s è conclusa e non può essere resa"
 
 #. module: stock_available_to_promise_release
 #: model_terms:ir.ui.view,arch_db:stock_available_to_promise_release.view_stock_release_form
@@ -586,9 +610,8 @@ msgstr ""
 #. module: stock_available_to_promise_release
 #: code:addons/stock_available_to_promise_release/models/stock_move.py:0
 #, python-format
-msgid "You are not allowed to unrelease this move %(move_name)s."
-msgstr ""
-"Non si ha l'abilitazione al rilascio di questo movimento %(move_name)s."
+msgid "You are not allowed to unrelease those deliveries:\n"
+msgstr "Non si è autorizzati a derilasciare quelle consegne:\n"
 
 #. module: stock_available_to_promise_release
 #: model:ir.model.fields,field_description:stock_available_to_promise_release.field_stock_move__zip_code
@@ -605,6 +628,29 @@ msgstr "giorni"
 #: model_terms:ir.ui.view,arch_db:stock_available_to_promise_release.res_config_settings_view_form_stock
 msgid "minutes"
 msgstr "minuti"
+
+#, python-format
+#~ msgid ""
+#~ "\n"
+#~ "- Origin picking(s):\n"
+#~ "\t -%(picking_names)s."
+#~ msgstr ""
+#~ "\n"
+#~ "- Prelievo origine(s):\n"
+#~ "\t -%(picking_names)s."
+
+#, python-format
+#~ msgid ""
+#~ "\n"
+#~ "- Picking: %(picking_name)s."
+#~ msgstr ""
+#~ "\n"
+#~ "- Prelievo: %(picking_name)s."
+
+#, python-format
+#~ msgid "You are not allowed to unrelease this move %(move_name)s."
+#~ msgstr ""
+#~ "Non si ha l'abilitazione al rilascio di questo movimento %(move_name)s."
 
 #~ msgid ""
 #~ "If checked, when a backorder is created the moves into the backorder are "
