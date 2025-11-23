@@ -209,9 +209,10 @@ class StockAction(Component):
         """
         available_moves = picking.move_lines.filtered(
             lambda m: m.state in ("partially_available", "assigned")
-        moves_todo = picking.move_lines - assigned_moves
+        )
+        moves_todo = picking.move_lines - available_moves
         moves_todo = moves_todo.filtered(lambda m: m.state not in ["done", "cancel"])
-        if not moves_todo and assigned_moves == moves:
+        if not moves_todo and available_moves == moves:
             return True
         has_ancestors = bool(
             moves.move_orig_ids.filtered(lambda m: m.state not in ("cancel", "done"))
